@@ -3,6 +3,7 @@
 import { KanbanBoard } from "@/components/kanban/kanban-board";
 import { PitchGenerator } from "@/components/kanban/pitch-generator";
 import { ScrapeForm } from "@/components/forms/scrape-form";
+import { LeadDetailsModal } from "@/components/kanban/lead-details-modal";
 import { useKanbanStore } from "@/store/kanban-store";
 import { Plus, Search } from "lucide-react";
 
@@ -43,6 +44,7 @@ export default function DashboardPage() {
       {/* Modals */}
       <PitchGenerator />
       <ScrapeForm />
+      <LeadDetailsModal />
     </div>
   );
 }
