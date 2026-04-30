@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { KanbanBoard } from "@/components/kanban/kanban-board";
 import { PitchGenerator } from "@/components/kanban/pitch-generator";
 import { ScrapeForm } from "@/components/forms/scrape-form";
