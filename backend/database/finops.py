@@ -11,110 +11,112 @@ from backend.database.supabase_client import get_supabase_client
 from backend.config import settings
 
 
-async def check_gemini_quota() -> int:
+async def check_and_increment_gemini_quota() -> bool:
     """
-    Check if Gemini API calls are within daily quota.
-    Returns current count if within quota.
+    Atomically checks and increments Gemini quota via Postgres RPC.
     Raises HTTP 429 if quota exceeded.
     """
     db = get_supabase_client()
+    try:
+        result = db.rpc(
+            "increment_gemini_calls", 
+            {"max_calls": settings.max_gemini_calls_per_day}
+        ).execute()
+        
+        # If the RPC doesn't exist yet, fallback to original logic for dev
+        if not result.data:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily Gemini API quota reached ({settings.max_gemini_calls_per_day} calls). Try again tomorrow."
+            )
+        return True
+    except Exception as e:
+        if "429" in str(e):
+            raise
+        # Fallback to non-atomic check if RPC fails/doesn't exist
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning(f"RPC increment_gemini_calls failed: {e}. Falling back to non-atomic check.")
+        return await _fallback_check_gemini()
+
+async def _fallback_check_gemini():
+    db = get_supabase_client()
     today = date.today().isoformat()
-
-    # Get or create today's usage record
     result = db.table("daily_api_usage").select("*").eq("date", today).execute()
-
+    
     if not result.data:
-        # Create today's record
         db.table("daily_api_usage").insert({
-            "date": today,
-            "gemini_calls": 0,
-            "scraper_runs": 0
+            "date": today, "gemini_calls": 1, "scraper_runs": 0
         }).execute()
-        return 0
-
-    current_calls = result.data[0].get("gemini_calls", 0)
-
-    if current_calls >= settings.max_gemini_calls_per_day:
+        return True
+        
+    current = result.data[0].get("gemini_calls", 0)
+    if current >= settings.max_gemini_calls_per_day:
         raise HTTPException(
             status_code=429,
-            detail=f"Daily Gemini API quota reached ({settings.max_gemini_calls_per_day} calls). "
-                   f"Try again tomorrow."
+            detail=f"Daily Gemini API quota reached ({settings.max_gemini_calls_per_day} calls)."
         )
+    
+    db.table("daily_api_usage").update({"gemini_calls": current + 1}).eq("date", today).execute()
+    return True
 
-    return current_calls
+async def check_and_increment_scraper_quota() -> bool:
+    """
+    Atomically checks and increments scraper quota via Postgres RPC.
+    Raises HTTP 429 if quota exceeded.
+    """
+    db = get_supabase_client()
+    try:
+        result = db.rpc(
+            "increment_scraper_runs", 
+            {"max_runs": settings.max_scraper_runs_per_day}
+        ).execute()
+        
+        if not result.data:
+            raise HTTPException(
+                status_code=429,
+                detail=f"Daily scraper quota reached ({settings.max_scraper_runs_per_day} runs). Try again tomorrow."
+            )
+        return True
+    except Exception as e:
+        if "429" in str(e):
+            raise
+        logger = __import__("logging").getLogger(__name__)
+        logger.warning(f"RPC increment_scraper_runs failed: {e}. Falling back to non-atomic check.")
+        return await _fallback_check_scraper()
 
+async def _fallback_check_scraper():
+    db = get_supabase_client()
+    today = date.today().isoformat()
+    result = db.table("daily_api_usage").select("*").eq("date", today).execute()
+    
+    if not result.data:
+        db.table("daily_api_usage").insert({
+            "date": today, "gemini_calls": 0, "scraper_runs": 1
+        }).execute()
+        return True
+        
+    current = result.data[0].get("scraper_runs", 0)
+    if current >= settings.max_scraper_runs_per_day:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Daily scraper quota reached ({settings.max_scraper_runs_per_day} runs)."
+        )
+        
+    db.table("daily_api_usage").update({"scraper_runs": current + 1}).eq("date", today).execute()
+    return True
+
+# Keep these for backwards compatibility if needed elsewhere
+async def check_gemini_quota() -> int:
+    return 0  # Handled by check_and_increment
 
 async def increment_gemini_calls() -> int:
-    """Increment the Gemini API call counter for today. Returns new count."""
-    db = get_supabase_client()
-    today = date.today().isoformat()
-
-    result = db.table("daily_api_usage").select("gemini_calls").eq("date", today).execute()
-
-    if not result.data:
-        db.table("daily_api_usage").insert({
-            "date": today,
-            "gemini_calls": 1,
-            "scraper_runs": 0
-        }).execute()
-        return 1
-
-    new_count = result.data[0]["gemini_calls"] + 1
-    db.table("daily_api_usage").update({
-        "gemini_calls": new_count
-    }).eq("date", today).execute()
-
-    return new_count
-
+    return 0  # Handled by check_and_increment
 
 async def check_scraper_quota() -> int:
-    """Check if scraper runs are within daily quota."""
-    db = get_supabase_client()
-    today = date.today().isoformat()
-
-    result = db.table("daily_api_usage").select("*").eq("date", today).execute()
-
-    if not result.data:
-        db.table("daily_api_usage").insert({
-            "date": today,
-            "gemini_calls": 0,
-            "scraper_runs": 0
-        }).execute()
-        return 0
-
-    current_runs = result.data[0].get("scraper_runs", 0)
-
-    if current_runs >= settings.max_scraper_runs_per_day:
-        raise HTTPException(
-            status_code=429,
-            detail=f"Daily scraper quota reached ({settings.max_scraper_runs_per_day} runs). "
-                   f"Try again tomorrow."
-        )
-
-    return current_runs
-
+    return 0  # Handled by check_and_increment
 
 async def increment_scraper_runs() -> int:
-    """Increment the scraper run counter for today."""
-    db = get_supabase_client()
-    today = date.today().isoformat()
-
-    result = db.table("daily_api_usage").select("scraper_runs").eq("date", today).execute()
-
-    if not result.data:
-        db.table("daily_api_usage").insert({
-            "date": today,
-            "gemini_calls": 0,
-            "scraper_runs": 1
-        }).execute()
-        return 1
-
-    new_count = result.data[0]["scraper_runs"] + 1
-    db.table("daily_api_usage").update({
-        "scraper_runs": new_count
-    }).eq("date", today).execute()
-
-    return new_count
+    return 0  # Handled by check_and_increment
 
 
 async def get_daily_usage() -> dict:

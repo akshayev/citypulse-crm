@@ -9,13 +9,16 @@ from typing import List
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
 
-    # Supabase
-    supabase_url: str = "your_project_url"
-    supabase_service_role_key: str = "your_secret_service_role_key"
+    # Supabase (Postgres + Auth)
+    supabase_url: str
+    supabase_service_role_key: str
 
-    # API Keys
-    serpapi_key: str = "your_serpapi_key"
-    gemini_api_key: str = "your_gemini_api_key"
+    # Third-party APIs
+    serpapi_key: str | None = None
+    gemini_api_key: str
+
+    # Security
+    backend_api_key: str = "dev-secret-key-123"
 
     # Server
     host: str = "0.0.0.0"

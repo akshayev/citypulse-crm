@@ -43,19 +43,19 @@ CREATE POLICY "admin_full_access_crm_leads"
     USING (is_admin())
     WITH CHECK (is_admin());
 
--- Sales reps can view their assigned leads
+-- Sales reps can view their assigned leads AND unassigned leads
 CREATE POLICY "sales_select_assigned_leads"
     ON crm_leads
     FOR SELECT
     TO authenticated
-    USING (assigned_to = auth.uid());
+    USING (assigned_to = auth.uid() OR assigned_to IS NULL);
 
--- Sales reps can update their assigned leads (move cards, add pitch scripts)
+-- Sales reps can update their assigned leads (move cards, add pitch scripts), AND claim unassigned leads
 CREATE POLICY "sales_update_assigned_leads"
     ON crm_leads
     FOR UPDATE
     TO authenticated
-    USING (assigned_to = auth.uid())
+    USING (assigned_to = auth.uid() OR assigned_to IS NULL)
     WITH CHECK (assigned_to = auth.uid());
 
 -- ==============================================================================

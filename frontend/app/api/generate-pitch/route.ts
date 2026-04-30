@@ -21,9 +21,27 @@ Rules:
 4. End with a soft call to action.
 5. Output plain text only. Do not use markdown formatting or emojis.`;
 
+import { createClient } from "@/lib/supabase/server";
+
 export async function POST(request: Request) {
   try {
     const { shopName, reasoning, city, heatScore } = await request.json();
+
+    // Check FinOps quota (spec: 03-Security)
+    const supabase = await createClient();
+    const maxCalls = parseInt(process.env.NEXT_PUBLIC_GEMINI_DAILY_LIMIT || "50", 10);
+    
+    const { data: isAllowed, error: rpcError } = await supabase.rpc(
+      "increment_gemini_calls",
+      { max_calls: maxCalls }
+    );
+
+    if (rpcError || !isAllowed) {
+      return new Response(
+        JSON.stringify({ error: "Daily AI generation limit reached. Please try again tomorrow." }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     // Build the personalized prompt
     const systemPrompt = COLD_SCRIPT_SYSTEM_PROMPT

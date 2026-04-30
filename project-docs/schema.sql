@@ -97,6 +97,54 @@ CREATE TABLE IF NOT EXISTS daily_api_usage (
     updated_at      TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- RPC for atomic FinOps Gemini increment and check
+CREATE OR REPLACE FUNCTION increment_gemini_calls(max_calls INTEGER)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    current_calls INTEGER;
+BEGIN
+    INSERT INTO daily_api_usage (date, gemini_calls, scraper_runs)
+    VALUES (CURRENT_DATE, 1, 0)
+    ON CONFLICT (date) DO UPDATE
+    SET gemini_calls = daily_api_usage.gemini_calls + 1
+    RETURNING gemini_calls INTO current_calls;
+
+    IF current_calls > max_calls THEN
+        -- Revert increment if it exceeded quota
+        UPDATE daily_api_usage SET gemini_calls = gemini_calls - 1 WHERE date = CURRENT_DATE;
+        RETURN FALSE;
+    END IF;
+    RETURN TRUE;
+END;
+$$;
+
+-- RPC for atomic FinOps Scraper increment and check
+CREATE OR REPLACE FUNCTION increment_scraper_runs(max_runs INTEGER)
+RETURNS BOOLEAN
+LANGUAGE plpgsql
+SECURITY DEFINER
+AS $$
+DECLARE
+    current_runs INTEGER;
+BEGIN
+    INSERT INTO daily_api_usage (date, gemini_calls, scraper_runs)
+    VALUES (CURRENT_DATE, 0, 1)
+    ON CONFLICT (date) DO UPDATE
+    SET scraper_runs = daily_api_usage.scraper_runs + 1
+    RETURNING scraper_runs INTO current_runs;
+
+    IF current_runs > max_runs THEN
+        -- Revert increment if it exceeded quota
+        UPDATE daily_api_usage SET scraper_runs = scraper_runs - 1 WHERE date = CURRENT_DATE;
+        RETURN FALSE;
+    END IF;
+    RETURN TRUE;
+END;
+$$;
+
 -- Dead Letter Queue: Failed tasks for retry
 CREATE TABLE IF NOT EXISTS dlq_tasks (
     task_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

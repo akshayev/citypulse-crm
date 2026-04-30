@@ -28,6 +28,7 @@ async def scrape_google_maps(
         dict with scrape_id and count of results found.
     """
     try:
+        import asyncio
         # Build the SerpApi query
         query = f"{niche} in {city}"
 
@@ -40,9 +41,9 @@ async def scrape_google_maps(
 
         logger.info(f"Starting SerpApi scrape: '{query}'")
 
-        # Execute the search
+        # Execute the search asynchronously in a thread
         search = GoogleSearch(params)
-        results = search.get_dict()
+        results = await asyncio.to_thread(search.get_dict)
 
         # Extract local results
         local_results = results.get("local_results", [])
@@ -67,7 +68,10 @@ async def scrape_google_maps(
         if created_by:
             insert_data["created_by"] = created_by
 
-        result = db.table("raw_scrapes").insert(insert_data).execute()
+        # Execute database insert asynchronously in a thread
+        result = await asyncio.to_thread(
+            db.table("raw_scrapes").insert(insert_data).execute
+        )
         scrape_id = result.data[0]["id"]
 
         logger.info(f"Bronze layer: Stored {len(local_results)} raw results (scrape_id: {scrape_id})")

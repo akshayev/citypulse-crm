@@ -19,12 +19,11 @@ from backend.scraper.serpapi_client import scrape_google_maps
 from backend.ai_pipeline.cleaner import clean_raw_scrape
 from backend.ai_pipeline.scorer import score_batch_from_scrape, score_single_lead
 from backend.database.finops import (
-    check_gemini_quota,
-    check_scraper_quota,
-    increment_scraper_runs,
+    check_and_increment_scraper_quota,
     get_daily_usage,
 )
 from backend.database.dlq import get_pending_retries, mark_retrying, mark_resolved, mark_failed_retry
+from fastapi import Header, Depends
 
 # Configure logging
 logging.basicConfig(
@@ -145,6 +144,18 @@ class ScrapeResponse(BaseModel):
 
 
 # ============================================================================
+# SECURITY / AUTHENTICATION
+# ============================================================================
+
+async def verify_api_key(x_api_key: str = Header(None)):
+    """Simple API Key verification for backend webhooks."""
+    expected_key = getattr(settings, "backend_api_key", "dev-secret-key-123")
+    if not x_api_key or x_api_key != expected_key:
+        raise HTTPException(status_code=401, detail="Unauthorized: Invalid API Key")
+    return x_api_key
+
+
+# ============================================================================
 # ENDPOINTS
 # ============================================================================
 
@@ -154,25 +165,22 @@ async def health_check():
     return {"status": "healthy", "service": "citypulse-crm-backend"}
 
 
-@app.get("/api/usage")
+@app.get("/api/usage", dependencies=[Depends(verify_api_key)])
 async def get_usage():
     """Get daily API usage stats for the admin dashboard."""
     usage = await get_daily_usage()
     return usage
 
 
-@app.post("/api/scrape", response_model=ScrapeResponse)
+@app.post("/api/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key)])
 async def trigger_scrape(request: ScrapeRequest, background_tasks: BackgroundTasks):
     """
     Trigger a full scraping pipeline: Bronze → Silver → Gold.
     Runs in the background via FastAPI without freezing the UI.
     Source: 01-System-Architecture.md
     """
-    # Check scraper quota (FinOps)
-    await check_scraper_quota()
-
-    # Increment usage counter
-    await increment_scraper_runs()
+    # Atomically check and increment scraper quota
+    await check_and_increment_scraper_quota()
 
     # Launch the full pipeline in the background
     background_tasks.add_task(
@@ -227,10 +235,10 @@ async def _run_full_pipeline(city: str, niche: str):
     logger.info(f"✅ Pipeline complete: {niche} in {city}")
 
 
-@app.post("/api/score/{place_id}")
+@app.post("/api/score/{place_id}", dependencies=[Depends(verify_api_key)])
 async def score_lead(place_id: str):
     """Score a single lead manually."""
-    await check_gemini_quota()
+    # check_and_increment_gemini_quota is called internally by score_single_lead
     result = await score_single_lead(place_id)
     return result
 

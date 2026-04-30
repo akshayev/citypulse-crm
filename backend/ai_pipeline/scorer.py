@@ -12,7 +12,7 @@ from google import genai
 from google.genai import types
 from backend.config import settings
 from backend.database.supabase_client import get_supabase_client
-from backend.database.finops import check_gemini_quota, increment_gemini_calls
+from backend.database.finops import check_and_increment_gemini_quota
 from backend.database.dlq import push_to_dlq
 
 logger = logging.getLogger(__name__)
@@ -62,11 +62,14 @@ async def score_single_lead(place_id: str) -> dict:
     db = get_supabase_client()
 
     try:
-        # Check FinOps quota first (spec: 03-Security)
-        await check_gemini_quota()
+        import asyncio
+        # Check FinOps quota first (spec: 03-Security) using the atomic RPC
+        await check_and_increment_gemini_quota()
 
         # Fetch the cleaned shop data
-        result = db.table("cleaned_shops").select("*").eq("place_id", place_id).execute()
+        result = await asyncio.to_thread(
+            db.table("cleaned_shops").select("*").eq("place_id", place_id).execute
+        )
 
         if not result.data:
             raise ValueError(f"Cleaned shop not found: {place_id}")
@@ -74,21 +77,23 @@ async def score_single_lead(place_id: str) -> dict:
         shop = result.data[0]
         context = _build_business_context(shop)
 
-        # Call Gemini 1.5 Flash
+        # Call Gemini 1.5 Flash in a thread
         client = genai.Client(api_key=settings.gemini_api_key)
 
-        response = client.models.generate_content(
-            model="gemini-1.5-flash",
-            contents=context,
-            config=types.GenerateContentConfig(
-                system_instruction=HEAT_SCORE_SYSTEM_PROMPT,
-                temperature=0.1,  # Low temperature for deterministic scoring
-                response_mime_type="application/json",
+        def _generate_content():
+            return client.models.generate_content(
+                model="gemini-1.5-flash",
+                contents=context,
+                config=types.GenerateContentConfig(
+                    system_instruction=HEAT_SCORE_SYSTEM_PROMPT,
+                    temperature=0.1,  # Low temperature for deterministic scoring
+                    response_mime_type="application/json",
+                )
             )
-        )
 
-        # Increment the FinOps counter
-        await increment_gemini_calls()
+        response = await asyncio.to_thread(_generate_content)
+
+        # (FinOps counter was already atomically incremented above)
 
         # Parse the JSON response
         response_text = response.text.strip()
@@ -113,7 +118,9 @@ async def score_single_lead(place_id: str) -> dict:
             "status": "new",
         }
 
-        db.table("crm_leads").insert(lead_data).execute()
+        await asyncio.to_thread(
+            db.table("crm_leads").insert(lead_data).execute
+        )
 
         logger.info(f"Gold layer: Scored {shop['shop_name']} → Heat Score: {heat_score}")
 
@@ -145,14 +152,15 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
     This is the final step in the Bronze → Silver → Gold pipeline.
     """
     db = get_supabase_client()
+    import asyncio
 
     # Get all cleaned shops linked to this scrape
-    result = (
+    result = await asyncio.to_thread(
         db.table("cleaned_shops")
         .select("place_id")
         .eq("raw_scrape_id", scrape_id)
         .eq("is_active", True)
-        .execute()
+        .execute
     )
 
     if not result.data:
@@ -163,11 +171,11 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
 
     for shop in result.data:
         # Check if already scored
-        existing = (
+        existing = await asyncio.to_thread(
             db.table("crm_leads")
             .select("id")
             .eq("place_id", shop["place_id"])
-            .execute()
+            .execute
         )
 
         if existing.data:

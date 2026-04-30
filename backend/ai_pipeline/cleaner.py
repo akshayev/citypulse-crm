@@ -52,11 +52,14 @@ async def _check_dnc(phone: str | None, website: str | None) -> bool:
     Source: 03-Security-and-Compliance.md
     """
     db = get_supabase_client()
+    import asyncio
 
     if phone:
         normalized = _normalize_phone(phone)
         if normalized:
-            result = db.table("dnc_registry").select("id").eq("phone", normalized).execute()
+            result = await asyncio.to_thread(
+                db.table("dnc_registry").select("id").eq("phone", normalized).execute
+            )
             if result.data:
                 logger.info(f"DNC BLOCK: Phone {normalized} is on blocklist")
                 return True
@@ -64,7 +67,9 @@ async def _check_dnc(phone: str | None, website: str | None) -> bool:
     if website:
         domain = _extract_domain(website)
         if domain:
-            result = db.table("dnc_registry").select("id").eq("website_domain", domain).execute()
+            result = await asyncio.to_thread(
+                db.table("dnc_registry").select("id").eq("website_domain", domain).execute
+            )
             if result.data:
                 logger.info(f"DNC BLOCK: Domain {domain} is on blocklist")
                 return True
@@ -82,10 +87,13 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
     4. Insert safe records into cleaned_shops
     """
     db = get_supabase_client()
+    import asyncio
 
     try:
         # Fetch the raw scrape
-        result = db.table("raw_scrapes").select("*").eq("id", scrape_id).execute()
+        result = await asyncio.to_thread(
+            db.table("raw_scrapes").select("*").eq("id", scrape_id).execute
+        )
 
         if not result.data:
             raise ValueError(f"Raw scrape not found: {scrape_id}")
@@ -149,10 +157,12 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
                 if lat and lng:
                     shop_data["lat_lng"] = f"({lat},{lng})"
 
-                db.table("cleaned_shops").upsert(
-                    shop_data,
-                    on_conflict="place_id"
-                ).execute()
+                await asyncio.to_thread(
+                    db.table("cleaned_shops").upsert(
+                        shop_data,
+                        on_conflict="place_id"
+                    ).execute
+                )
 
                 cleaned_count += 1
 
