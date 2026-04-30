@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useKanbanStore } from "@/store/kanban-store";
@@ -17,6 +17,8 @@ import {
   BarChart3,
 } from "lucide-react";
 
+import { cn } from "@/lib/utils";
+
 /**
  * Dashboard Layout — Sidebar + Topbar + Content Area
  * Source: 06-UI-UX-Guidelines.md (glassmorphic sidebar)
@@ -27,7 +29,9 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const { sidebarOpen, toggleSidebar } = useKanbanStore();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { sidebarOpen, toggleSidebar, searchQuery, setSearchQuery } = useKanbanStore();
   const [user, setUser] = useState<{ email?: string; full_name?: string } | null>(null);
 
   useEffect(() => {
@@ -41,6 +45,31 @@ export default function DashboardLayout({
       }
     });
   }, []);
+
+  // Sync initial URL search param to store
+  useEffect(() => {
+    const q = searchParams.get("q");
+    if (q !== null && q !== searchQuery) {
+      setSearchQuery(q);
+    }
+  }, [searchParams, setSearchQuery]); // only on mount or URL change
+
+  // Sync store search query to URL (with debounce)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const currentQ = searchParams.get("q") || "";
+      if (searchQuery !== currentQ) {
+        const params = new URLSearchParams(searchParams.toString());
+        if (searchQuery) {
+          params.set("q", searchQuery);
+        } else {
+          params.delete("q");
+        }
+        router.replace(`${pathname}?${params.toString()}`);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, pathname, router, searchParams]);
 
   async function handleLogout() {
     const supabase = createClient();
@@ -57,11 +86,20 @@ export default function DashboardLayout({
 
   return (
     <div className="flex h-screen overflow-hidden">
+      {/* Mobile Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-20 md:hidden" 
+          onClick={toggleSidebar}
+        />
+      )}
+
       {/* ====== SIDEBAR ====== */}
       <aside
-        className={`${
-          sidebarOpen ? "w-64" : "w-0 -ml-64 md:w-16 md:ml-0"
-        } glass-card rounded-none border-r border-glass-border flex flex-col transition-all duration-300 shrink-0 z-30`}
+        className={cn(
+          "fixed md:static inset-y-0 left-0 glass-card rounded-none border-r border-glass-border flex flex-col transition-all duration-300 shrink-0 z-30",
+          sidebarOpen ? "translate-x-0 w-64" : "-translate-x-full md:translate-x-0 w-64 md:w-16"
+        )}
       >
         {/* Logo */}
         <div className="p-4 flex items-center gap-3 border-b border-glass-border">
@@ -151,6 +189,8 @@ export default function DashboardLayout({
                 type="text"
                 placeholder="Search leads..."
                 className="glass-input pl-9 pr-4 py-1.5 text-xs w-48"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
           </div>

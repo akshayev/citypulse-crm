@@ -5,6 +5,7 @@ import { Sparkles, X, Copy, Check } from "lucide-react";
 import { useKanbanStore } from "@/store/kanban-store";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 /**
  * AI Pitch Generator — SSE Streaming Typewriter Effect
@@ -90,6 +91,7 @@ export function PitchGenerator() {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
+      toast.error("Failed to generate pitch.");
     } finally {
       setIsStreaming(false);
     }
@@ -98,14 +100,15 @@ export function PitchGenerator() {
   function handleCopy() {
     navigator.clipboard.writeText(streamedText);
     setCopied(true);
+    toast.success("Pitch copied to clipboard!");
     setTimeout(() => setCopied(false), 2000);
   }
 
   if (!pitchModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="glass-card w-full max-w-lg p-6">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
+      <div className="glass-card w-full max-w-lg p-6 max-h-[95vh] flex flex-col my-auto">
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">

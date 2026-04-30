@@ -3,6 +3,8 @@
 import { useDraggable } from "@dnd-kit/core";
 import { CSS } from "@dnd-kit/utilities";
 import { Flame, Phone, Globe, MapPin, Sparkles, Ban } from "lucide-react";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { cn, getHeatScoreClass, formatPhone } from "@/lib/utils";
 import { useKanbanStore } from "@/store/kanban-store";
 import type { Lead } from "./kanban-board";
@@ -25,8 +27,50 @@ export function KanbanCard({ lead, isDragging = false }: KanbanCardProps) {
     id: lead.id,
   });
 
-  const { openPitchModal } = useKanbanStore();
+  const { openPitchModal, openLeadDetail } = useKanbanStore();
   const shop = lead.cleaned_shops;
+
+  const queryClient = useQueryClient();
+  const rejectLead = useMutation({
+    mutationFn: async () => {
+      const { createClient } = await import("@/lib/supabase/client");
+      const supabase = createClient();
+      
+      // Execute concurrently
+      await Promise.all([
+        supabase.from("crm_leads").update({ status: "lost" }).eq("id", lead.id),
+        supabase.from("dnc_registry").insert({
+          phone: shop?.phone || null,
+          website_domain: shop?.website || null,
+          reason: "Manually rejected via Kanban",
+        })
+      ]);
+    },
+    onMutate: async () => {
+      await queryClient.cancelQueries({ queryKey: ["leads"] });
+      const previous = queryClient.getQueryData(["leads"]);
+
+      queryClient.setQueryData(["leads"], (old: any) =>
+        old?.map((l: any) =>
+          l.id === lead.id ? { ...l, status: "lost" } : l
+        )
+      );
+
+      return { previous };
+    },
+    onSuccess: () => {
+      toast.success("Lead rejected and added to DNC list.");
+    },
+    onError: (_err, _vars, context) => {
+      toast.error("Failed to reject lead.");
+      if (context?.previous) {
+        queryClient.setQueryData(["leads"], context.previous);
+      }
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["leads"] });
+    },
+  });
 
   const style = transform
     ? {
@@ -40,8 +84,9 @@ export function KanbanCard({ lead, isDragging = false }: KanbanCardProps) {
       style={style}
       {...listeners}
       {...attributes}
+      onClick={() => openLeadDetail(lead.id)}
       className={cn(
-        "glass-card p-4 kanban-card",
+        "glass-card p-4 kanban-card cursor-pointer",
         isDragging && "kanban-card-dragging"
       )}
     >
@@ -108,21 +153,10 @@ export function KanbanCard({ lead, isDragging = false }: KanbanCardProps) {
         <button
           onClick={(e) => {
             e.stopPropagation();
-            // DNC reject — moves to lost + adds to blocklist
-            const supabase = (async () => {
-              const { createClient } = await import("@/lib/supabase/client");
-              const sb = createClient();
-              // Mark as lost
-              await sb.from("crm_leads").update({ status: "lost" }).eq("id", lead.id);
-              // Add to DNC registry
-              await sb.from("dnc_registry").insert({
-                phone: shop?.phone || null,
-                website_domain: shop?.website || null,
-                reason: "Manually rejected via Kanban",
-              });
-            })();
+            rejectLead.mutate();
           }}
-          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-danger/10 text-danger hover:bg-danger/20 transition-colors"
+          disabled={rejectLead.isPending}
+          className="px-3 py-1.5 text-xs font-medium rounded-lg bg-danger/10 text-danger hover:bg-danger/20 transition-colors disabled:opacity-50"
           title="Reject & add to DNC blocklist"
         >
           <Ban className="w-3 h-3" />
