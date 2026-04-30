@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
@@ -22,16 +22,19 @@ import { cn } from "@/lib/utils";
 /**
  * Dashboard Layout — Sidebar + Topbar + Content Area
  * Source: 06-UI-UX-Guidelines.md (glassmorphic sidebar)
+ *
+ * NOTE: The inner shell is wrapped in <Suspense> because it uses
+ * useSearchParams(), which requires a Suspense boundary for
+ * Next.js static generation (Vercel build) to succeed.
  */
-export default function DashboardLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+
+// ─── Inner shell (uses useSearchParams — must be inside Suspense) ─────────────
+function DashboardShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const { sidebarOpen, toggleSidebar, searchQuery, setSearchQuery } = useKanbanStore();
+  const { sidebarOpen, toggleSidebar, searchQuery, setSearchQuery } =
+    useKanbanStore();
   const [user, setUser] = useState<{ email?: string; full_name?: string } | null>(null);
 
   useEffect(() => {
@@ -52,7 +55,7 @@ export default function DashboardLayout({
     if (q !== null && q !== searchQuery) {
       setSearchQuery(q);
     }
-  }, [searchParams, setSearchQuery]); // only on mount or URL change
+  }, [searchParams, setSearchQuery]);
 
   // Sync store search query to URL (with debounce)
   useEffect(() => {
@@ -88,8 +91,8 @@ export default function DashboardLayout({
     <div className="flex h-screen overflow-hidden">
       {/* Mobile Overlay */}
       {sidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-20 md:hidden" 
+        <div
+          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-20 md:hidden"
           onClick={toggleSidebar}
         />
       )}
@@ -143,9 +146,7 @@ export default function DashboardLayout({
                 <p className="text-xs font-medium text-text-primary truncate">
                   {user?.full_name || "User"}
                 </p>
-                <p className="text-xs text-text-muted truncate">
-                  {user?.email}
-                </p>
+                <p className="text-xs text-text-muted truncate">{user?.email}</p>
               </div>
             )}
           </div>
@@ -200,5 +201,24 @@ export default function DashboardLayout({
         <main className="flex-1 overflow-auto p-4">{children}</main>
       </div>
     </div>
+  );
+}
+
+// ─── Outer layout — wraps shell in Suspense for Next.js SSG ──────────────────
+export default function DashboardLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex h-screen items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-accent border-t-transparent animate-spin" />
+        </div>
+      }
+    >
+      <DashboardShell>{children}</DashboardShell>
+    </Suspense>
   );
 }
