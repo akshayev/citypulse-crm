@@ -6,7 +6,6 @@ The Orchestrator: FastAPI webhooks that securely trigger background
 Selenium/SerpApi scrapes based on frontend payloads.
 Runs the full Bronze → Silver → Gold pipeline.
 """
-print("--- DIAGNOSTIC: main.py is starting ---")
 import asyncio
 import logging
 from contextlib import asynccontextmanager
