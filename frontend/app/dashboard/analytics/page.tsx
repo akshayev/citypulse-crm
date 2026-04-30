@@ -32,9 +32,7 @@ export default function AnalyticsPage() {
   const { data: usage } = useQuery({
     queryKey: ["api-usage"],
     queryFn: async () => {
-      const backendUrl =
-        process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-      const res = await fetch(`${backendUrl}/api/usage`);
+      const res = await fetch("/api/usage");
       if (!res.ok) return null;
       return res.json();
     },

@@ -13,4 +13,5 @@
 # SUPABASE_SERVICE_ROLE_KEY
 # SERPAPI_KEY
 # GEMINI_API_KEY
+# BACKEND_API_KEY (shared secret used by frontend server proxy)
 # CORS_ORIGINS (set to your Vercel frontend URL)

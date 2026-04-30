@@ -8,6 +8,7 @@ Writes scored leads to crm_leads (Gold layer).
 """
 import json
 import logging
+from fastapi import HTTPException
 from google import genai
 from google.genai import types
 from backend.config import settings
@@ -132,6 +133,12 @@ async def score_single_lead(place_id: str) -> dict:
             "reasoning": reasoning
         }
 
+    except HTTPException as e:
+        if e.status_code == 429:
+            logger.warning(f"Gemini quota exhausted while scoring {place_id}: {e.detail}")
+            return {"status": "quota_exceeded", "error": e.detail}
+        raise
+
     except Exception as e:
         error_msg = f"Gemini scoring failed for {place_id}: {str(e)}"
         logger.error(error_msg)
@@ -168,6 +175,7 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
 
     scored = 0
     errors = 0
+    quota_exhausted = False
 
     for shop in result.data:
         # Check if already scored
@@ -186,14 +194,19 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
 
         if result.get("status") == "success":
             scored += 1
+        elif result.get("status") == "quota_exceeded":
+            quota_exhausted = True
+            logger.warning("Stopping batch scoring early due to daily Gemini quota exhaustion.")
+            break
         else:
             errors += 1
 
     logger.info(f"Gold layer batch: Scored {scored}, Errors: {errors} (scrape_id: {scrape_id})")
 
     return {
-        "status": "success",
+        "status": "partial" if quota_exhausted else "success",
         "scrape_id": scrape_id,
         "scored": scored,
-        "errors": errors
+        "errors": errors,
+        "quota_exhausted": quota_exhausted
     }

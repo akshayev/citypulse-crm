@@ -6,9 +6,38 @@ Checks daily_api_usage table before any third-party API call.
 Hard blocks at quota with HTTP 429.
 """
 from datetime import date
+import logging
+from typing import Any
 from fastapi import HTTPException
 from backend.database.supabase_client import get_supabase_client
 from backend.config import settings
+
+logger = logging.getLogger(__name__)
+
+
+def _rpc_allowed(result_data: Any) -> bool:
+    """Normalize RPC return payloads to a strict allow/deny boolean."""
+    if result_data is None:
+        return False
+
+    if isinstance(result_data, list):
+        if not result_data:
+            return False
+        first_item = result_data[0]
+        if isinstance(first_item, dict):
+            if "allowed" in first_item:
+                return bool(first_item["allowed"])
+            if len(first_item) == 1:
+                return bool(next(iter(first_item.values())))
+        return bool(first_item)
+
+    if isinstance(result_data, dict):
+        if "allowed" in result_data:
+            return bool(result_data["allowed"])
+        if len(result_data) == 1:
+            return bool(next(iter(result_data.values())))
+
+    return bool(result_data)
 
 
 async def check_and_increment_gemini_quota() -> bool:
@@ -23,18 +52,16 @@ async def check_and_increment_gemini_quota() -> bool:
             {"max_calls": settings.max_gemini_calls_per_day}
         ).execute()
         
-        # If the RPC doesn't exist yet, fallback to original logic for dev
-        if not result.data:
+        if not _rpc_allowed(result.data):
             raise HTTPException(
                 status_code=429,
                 detail=f"Daily Gemini API quota reached ({settings.max_gemini_calls_per_day} calls). Try again tomorrow."
             )
         return True
+    except HTTPException:
+        raise
     except Exception as e:
-        if "429" in str(e):
-            raise
         # Fallback to non-atomic check if RPC fails/doesn't exist
-        logger = __import__("logging").getLogger(__name__)
         logger.warning(f"RPC increment_gemini_calls failed: {e}. Falling back to non-atomic check.")
         return await _fallback_check_gemini()
 
@@ -71,16 +98,15 @@ async def check_and_increment_scraper_quota() -> bool:
             {"max_runs": settings.max_scraper_runs_per_day}
         ).execute()
         
-        if not result.data:
+        if not _rpc_allowed(result.data):
             raise HTTPException(
                 status_code=429,
                 detail=f"Daily scraper quota reached ({settings.max_scraper_runs_per_day} runs). Try again tomorrow."
             )
         return True
+    except HTTPException:
+        raise
     except Exception as e:
-        if "429" in str(e):
-            raise
-        logger = __import__("logging").getLogger(__name__)
         logger.warning(f"RPC increment_scraper_runs failed: {e}. Falling back to non-atomic check.")
         return await _fallback_check_scraper()
 

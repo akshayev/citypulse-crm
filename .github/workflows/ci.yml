@@ -57,3 +57,8 @@ jobs:
         pip install black
         black --check .
       working-directory: ./backend
+
+    - name: Run backend tests
+      run: |
+        pip install pytest
+        pytest backend/tests -q

@@ -61,8 +61,7 @@ export function ScrapeForm() {
     setResult(null);
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
-      const response = await fetch(`${backendUrl}/api/scrape`, {
+      const response = await fetch("/api/scrape", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
