@@ -1,0 +1,301 @@
+@import "tailwindcss";
+
+/* =============================================================================
+   CityPulse CRM — Design System
+   Source: 06-UI-UX-Guidelines.md
+   
+   Premium Dark Charcoal + Vibrant Teal Glassmorphism
+   ============================================================================= */
+
+@theme inline {
+  /* Background (Dark Charcoal) */
+  --color-background: #121212;
+  --color-background-secondary: #1F2937;
+  --color-background-elevated: #1a1a2e;
+
+  /* Primary Accent (Vibrant Teal) */
+  --color-accent: #0D9488;
+  --color-accent-light: #14B8A6;
+  --color-accent-glow: rgba(13, 148, 136, 0.3);
+
+  /* Glass Card Backgrounds */
+  --color-glass-bg: rgba(255, 255, 255, 0.05);
+  --color-glass-border: rgba(255, 255, 255, 0.1);
+  --color-glass-hover: rgba(255, 255, 255, 0.08);
+
+  /* Text */
+  --color-text-primary: #FAFAFA;
+  --color-text-secondary: #A1A1AA;
+  --color-text-muted: #71717A;
+
+  /* Status Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Heat Score Gradient */
+  --color-heat-cold: #3B82F6;
+  --color-heat-warm: #F59E0B;
+  --color-heat-hot: #EF4444;
+
+  /* Kanban Column Colors */
+  --color-kanban-new: rgba(59, 130, 246, 0.1);
+  --color-kanban-contacting: rgba(245, 158, 11, 0.1);
+  --color-kanban-won: rgba(16, 185, 129, 0.1);
+  --color-kanban-lost: rgba(239, 68, 68, 0.1);
+
+  /* Typography */
+  --font-sans: var(--font-geist-sans), "Inter", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), "JetBrains Mono", monospace;
+
+  /* Shadows */
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px var(--color-accent-glow);
+  --shadow-card: 0 4px 16px rgba(0, 0, 0, 0.3);
+  --shadow-drag: 0 20px 60px rgba(0, 0, 0, 0.5);
+
+  /* Radius */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+
+  /* Animations */
+  --transition-fast: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-default: 250ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 400ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* =============================================================================
+   BASE STYLES
+   ============================================================================= */
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  height: 100%;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* =============================================================================
+   GLASSMORPHISM UTILITIES
+   ============================================================================= */
+
+.glass-card {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--color-glass-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-glass);
+  transition: all var(--transition-default);
+}
+
+.glass-card:hover {
+  background: var(--color-glass-hover);
+  border-color: rgba(255, 255, 255, 0.15);
+}
+
+.glass-input {
+  background: var(--color-glass-bg);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  transition: all var(--transition-fast);
+}
+
+.glass-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-glow);
+}
+
+.glass-input::placeholder {
+  color: var(--color-text-muted);
+}
+
+/* =============================================================================
+   BUTTON VARIANTS
+   ============================================================================= */
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-light));
+  color: white;
+  font-weight: 600;
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 0 4px 12px var(--color-accent-glow);
+}
+
+.btn-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px var(--color-accent-glow);
+}
+
+.btn-primary:active {
+  transform: translateY(0);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-glass-border);
+  padding: 10px 20px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.btn-ghost:hover {
+  background: var(--color-glass-bg);
+  color: var(--color-text-primary);
+}
+
+/* =============================================================================
+   HEAT SCORE BADGE
+   ============================================================================= */
+
+.heat-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.75rem;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  min-width: 40px;
+}
+
+.heat-cold { background: rgba(59,130,246,0.2); color: #60A5FA; }
+.heat-warm { background: rgba(245,158,11,0.2); color: #FBBF24; }
+.heat-hot  { background: rgba(239,68,68,0.2);  color: #F87171; }
+
+/* =============================================================================
+   KANBAN DRAG EFFECTS (spec: 06-UI-UX-Guidelines.md)
+   ============================================================================= */
+
+.kanban-card-dragging {
+  transform: scale(1.05);
+  box-shadow: var(--shadow-drag) !important;
+  z-index: 50;
+  opacity: 0.95;
+  cursor: grabbing;
+}
+
+.kanban-card {
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+  cursor: grab;
+}
+
+.kanban-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-card);
+}
+
+/* =============================================================================
+   TYPEWRITER / SSE STREAMING EFFECT
+   ============================================================================= */
+
+.typewriter-cursor::after {
+  content: '▊';
+  animation: blink 1s step-end infinite;
+  color: var(--color-accent);
+  margin-left: 2px;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+/* =============================================================================
+   SCROLLBAR STYLING
+   ============================================================================= */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* =============================================================================
+   LOADING SPINNER
+   ============================================================================= */
+
+.spinner {
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--color-glass-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* =============================================================================
+   ANIMATIONS
+   ============================================================================= */
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes slideInLeft {
+  from { opacity: 0; transform: translateX(-20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes pulseGlow {
+  0%, 100% { box-shadow: 0 0 10px var(--color-accent-glow); }
+  50% { box-shadow: 0 0 25px var(--color-accent-glow); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out;
+}
+
+.animate-slide-in {
+  animation: slideInLeft 0.3s ease-out;
+}
+
+.animate-pulse-glow {
+  animation: pulseGlow 2s ease-in-out infinite;
+}

@@ -1,0 +1,249 @@
+"""
+CityPulse CRM — FastAPI Backend Server
+Source: 01-System-Architecture.md, 12-Features-Roadmap.md
+
+The Orchestrator: FastAPI webhooks that securely trigger background
+Selenium/SerpApi scrapes based on frontend payloads.
+Runs the full Bronze → Silver → Gold pipeline.
+"""
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel, Field
+from enum import Enum
+
+from backend.config import settings
+from backend.scraper.serpapi_client import scrape_google_maps
+from backend.ai_pipeline.cleaner import clean_raw_scrape
+from backend.ai_pipeline.scorer import score_batch_from_scrape, score_single_lead
+from backend.database.finops import (
+    check_gemini_quota,
+    check_scraper_quota,
+    increment_scraper_runs,
+    get_daily_usage,
+)
+from backend.database.dlq import get_pending_retries, mark_retrying, mark_resolved, mark_failed_retry
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# LIFESPAN: Background DLQ retry worker
+# ============================================================================
+
+async def dlq_retry_worker():
+    """Background worker that retries failed DLQ tasks with exponential backoff."""
+    while True:
+        try:
+            pending = await get_pending_retries()
+            for task in pending:
+                task_id = task["task_id"]
+                task_type = task["task_type"]
+                payload = task["payload"]
+
+                logger.info(f"DLQ retry: {task_type} (task_id: {task_id}, attempt: {task['retry_count'] + 1})")
+                await mark_retrying(task_id)
+
+                try:
+                    if task_type == "scrape":
+                        result = await scrape_google_maps(**payload)
+                    elif task_type == "clean":
+                        result = await clean_raw_scrape(payload["scrape_id"])
+                    elif task_type == "score":
+                        result = await score_single_lead(payload["place_id"])
+                    else:
+                        raise ValueError(f"Unknown task type: {task_type}")
+
+                    if result.get("status") == "success":
+                        await mark_resolved(task_id)
+                        logger.info(f"DLQ resolved: {task_id}")
+                    else:
+                        raise Exception(result.get("error", "Unknown error"))
+
+                except Exception as e:
+                    await mark_failed_retry(task_id, str(e))
+                    logger.warning(f"DLQ retry failed: {task_id} — {e}")
+
+        except Exception as e:
+            logger.error(f"DLQ worker error: {e}")
+
+        # Check DLQ every 60 seconds
+        await asyncio.sleep(60)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """App lifespan — starts the DLQ retry worker."""
+    task = asyncio.create_task(dlq_retry_worker())
+    logger.info("🚀 CityPulse Backend started. DLQ worker running.")
+    yield
+    task.cancel()
+    logger.info("Backend shutting down.")
+
+
+# ============================================================================
+# APP INITIALIZATION
+# ============================================================================
+
+app = FastAPI(
+    title="CityPulse CRM API",
+    description="Event-driven CRM backend with AI-powered lead scoring",
+    version="1.0.0",
+    lifespan=lifespan,
+)
+
+# CORS — allow Next.js frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origin_list,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============================================================================
+# REQUEST/RESPONSE MODELS
+# ============================================================================
+
+class NicheEnum(str, Enum):
+    """Predefined niches to prevent malformed queries (spec: 07-Forms-and-Validation.md)"""
+    restaurants = "restaurants"
+    salons = "salons"
+    gyms = "gyms"
+    dental_clinics = "dental clinics"
+    real_estate = "real estate agents"
+    plumbers = "plumbers"
+    electricians = "electricians"
+    auto_repair = "auto repair"
+    pet_stores = "pet stores"
+    photography = "photography studios"
+    tutoring = "tutoring centers"
+    yoga_studios = "yoga studios"
+    bakeries = "bakeries"
+    laundry = "laundry services"
+    car_wash = "car wash"
+
+
+class ScrapeRequest(BaseModel):
+    city: str = Field(..., min_length=1, description="Target city for scraping")
+    niche: NicheEnum = Field(..., description="Business niche to search")
+
+
+class ScrapeResponse(BaseModel):
+    status: str
+    message: str
+    scrape_id: str | None = None
+    results_count: int = 0
+
+
+# ============================================================================
+# ENDPOINTS
+# ============================================================================
+
+@app.get("/api/health")
+async def health_check():
+    """Health check endpoint."""
+    return {"status": "healthy", "service": "citypulse-crm-backend"}
+
+
+@app.get("/api/usage")
+async def get_usage():
+    """Get daily API usage stats for the admin dashboard."""
+    usage = await get_daily_usage()
+    return usage
+
+
+@app.post("/api/scrape", response_model=ScrapeResponse)
+async def trigger_scrape(request: ScrapeRequest, background_tasks: BackgroundTasks):
+    """
+    Trigger a full scraping pipeline: Bronze → Silver → Gold.
+    Runs in the background via FastAPI without freezing the UI.
+    Source: 01-System-Architecture.md
+    """
+    # Check scraper quota (FinOps)
+    await check_scraper_quota()
+
+    # Increment usage counter
+    await increment_scraper_runs()
+
+    # Launch the full pipeline in the background
+    background_tasks.add_task(
+        _run_full_pipeline,
+        city=request.city,
+        niche=request.niche.value,
+    )
+
+    return ScrapeResponse(
+        status="accepted",
+        message=f"Scraping pipeline started for '{request.niche.value}' in '{request.city}'. "
+                f"Results will appear in the Kanban board via real-time sync.",
+    )
+
+
+async def _run_full_pipeline(city: str, niche: str):
+    """
+    Execute the full Medallion pipeline:
+    1. Bronze: Scrape → raw_scrapes
+    2. Silver: Clean → cleaned_shops
+    3. Gold: Score → crm_leads
+    """
+    logger.info(f"Pipeline started: {niche} in {city}")
+
+    # Step 1: Bronze — Scrape
+    scrape_result = await scrape_google_maps(city=city, niche=niche)
+
+    if scrape_result.get("status") != "success":
+        logger.error(f"Pipeline aborted at Bronze: {scrape_result}")
+        return
+
+    scrape_id = scrape_result["scrape_id"]
+    logger.info(f"Bronze complete: {scrape_result['count']} results")
+
+    # Step 2: Silver — Clean
+    clean_result = await clean_raw_scrape(scrape_id=scrape_id)
+
+    if clean_result.get("status") != "success":
+        logger.error(f"Pipeline aborted at Silver: {clean_result}")
+        return
+
+    logger.info(f"Silver complete: {clean_result['cleaned']} cleaned, {clean_result['blocked']} blocked")
+
+    # Step 3: Gold — Score with AI
+    score_result = await score_batch_from_scrape(scrape_id=scrape_id)
+
+    logger.info(
+        f"Gold complete: {score_result.get('scored', 0)} scored, "
+        f"{score_result.get('errors', 0)} errors"
+    )
+
+    logger.info(f"✅ Pipeline complete: {niche} in {city}")
+
+
+@app.post("/api/score/{place_id}")
+async def score_lead(place_id: str):
+    """Score a single lead manually."""
+    await check_gemini_quota()
+    result = await score_single_lead(place_id)
+    return result
+
+
+# ============================================================================
+# ENTRY POINT
+# ============================================================================
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "backend.main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=True,
+    )
