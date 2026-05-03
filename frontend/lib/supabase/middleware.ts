@@ -7,6 +7,13 @@ import { NextResponse, type NextRequest } from "next/server";
  * Source: 05-Frontend-Architecture.md
  */
 export async function updateSession(request: NextRequest) {
+  if (
+    !process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  ) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -35,9 +42,16 @@ export async function updateSession(request: NextRequest) {
   );
 
   // Refresh the auth session
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let user = null;
+  try {
+    const {
+      data: { user: authUser },
+    } = await supabase.auth.getUser();
+    user = authUser;
+  } catch {
+    // If auth refresh fails in edge/runtime, avoid taking down the entire page.
+    return supabaseResponse;
+  }
 
   // Protected routes: redirect to /login if unauthenticated
   if (

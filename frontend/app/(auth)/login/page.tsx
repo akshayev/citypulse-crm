@@ -80,6 +80,10 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
+          <div className="p-3 rounded-lg bg-info/10 border border-info/20 text-info text-sm">
+            If you just signed up, confirm your email first, then sign in.
+          </div>
+
           {serverError && (
             <div className="p-3 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm">
               {serverError}

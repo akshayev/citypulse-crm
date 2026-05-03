@@ -43,10 +43,11 @@ export default function SignupPage() {
     setServerError(null);
 
     const supabase = createClient();
-    const { error } = await supabase.auth.signUp({
+    const { data: signupData, error } = await supabase.auth.signUp({
       email: data.email,
       password: data.password,
       options: {
+        emailRedirectTo: `${window.location.origin}/login`,
         data: {
           full_name: data.fullName,
           role: "sales_rep", // Default role; admins set manually
@@ -56,6 +57,14 @@ export default function SignupPage() {
 
     if (error) {
       setServerError(error.message);
+      setIsLoading(false);
+      return;
+    }
+
+    if (!signupData.session) {
+      setServerError(
+        "Account created. Please confirm your email, then sign in."
+      );
       setIsLoading(false);
       return;
     }

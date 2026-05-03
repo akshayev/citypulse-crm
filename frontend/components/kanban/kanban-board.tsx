@@ -63,7 +63,7 @@ const COLUMNS = [
  */
 export function KanbanBoard() {
   const queryClient = useQueryClient();
-  const { activeDragId, setActiveDragId } = useKanbanStore();
+  const { activeDragId, setActiveDragId, searchQuery } = useKanbanStore();
 
   // Configure sensors with touch support (spec: 06)
   const sensors = useSensors(
@@ -200,7 +200,6 @@ export function KanbanBoard() {
   }
 
   // Filter leads based on searchQuery from the store
-  const { searchQuery } = useKanbanStore();
   const filteredLeads = leads.filter((lead) => {
     if (!searchQuery) return true;
     const lowerQuery = searchQuery.toLowerCase();
