@@ -7,7 +7,7 @@ import { PitchGenerator } from "@/components/kanban/pitch-generator";
 import { ScrapeForm } from "@/components/forms/scrape-form";
 import { LeadDetailsModal } from "@/components/kanban/lead-details-modal";
 import { useKanbanStore } from "@/store/kanban-store";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 
 /**
  * Dashboard Main Page — The Command Center
