@@ -27,3 +27,15 @@ Based on a deep architectural and functional analysis of the codebase, the follo
 
 ## 5. Outstanding Configuration Needs
 - **Supabase CORS**: The Render frontend URL (`https://citypulse-frontend-web.onrender.com`) must be manually added to the Supabase Authentication Redirect URLs, otherwise OAuth and magic links will fail.
+
+## 6. Real-Time Data Sync Limitations
+- **Supabase Realtime Channel Misuse**: In `frontend/components/kanban/kanban-board.tsx`, the `postgres_changes` subscription on `crm_leads` immediately triggers a generic React Query invalidation (`queryClient.invalidateQueries({ queryKey: ["leads"] })`). In a multi-tenant or multi-user environment, any update by any user causes all connected clients to refetch the entire massive dataset of leads at once.
+  - *Fix*: The subscription callback should read the payload from Supabase and optimistically apply *just the delta* to the React Query cache using `setQueryData`, rather than blindly refetching.
+
+## 7. Pagination and Data Fetching Inefficiencies
+- **Kanban Board Client-Side Filtering**: In the `KanbanBoard` component, search filtering is currently done entirely on the client side (`filteredLeads.filter(...)`). If the database has 1000+ leads, this requires pulling all of them to the frontend first, bypassing the benefits of server-side pagination.
+  - *Fix*: Move the search logic into the Supabase query (`.ilike('shop_name', \`%${searchQuery}%\`)`) so pagination (`limit(50)`) operates on the actual filtered dataset rather than a subset of the first 50 returned.
+
+## 8. Hardcoded Defaults & Magic Strings
+- **Config Hardcodes**: The Fastapi `config.py` hardcodes the backend fallback API key (`dev-secret-key-123`) directly in the `Settings` class default. This acts as a backdoor if the environment variable fails to load.
+- **Frontend URL Guessing**: The Next.js API routes (`app/api/usage/route.ts` and `app/api/scrape/route.ts`) have a hardcoded `http://localhost:8000` fallback if `BACKEND_URL` is missing. This can cause silent failures where Next.js attempts to reach localhost in a deployed environment instead of throwing a fast configuration error.
