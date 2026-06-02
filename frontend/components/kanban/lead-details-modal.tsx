@@ -77,7 +77,7 @@ export function LeadDetailsModal() {
                   <Flame className="w-3.5 h-3.5" /> AI Analysis
                 </h3>
                 <p className="text-sm text-text-secondary leading-relaxed italic">
-                  "{lead.reasoning}"
+                  &quot;{lead.reasoning}&quot;
                 </p>
               </div>
             )}

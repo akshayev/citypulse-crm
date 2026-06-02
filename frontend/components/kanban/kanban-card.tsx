@@ -50,8 +50,8 @@ export function KanbanCard({ lead, isDragging = false }: KanbanCardProps) {
       await queryClient.cancelQueries({ queryKey: ["leads"] });
       const previous = queryClient.getQueryData(["leads"]);
 
-      queryClient.setQueryData(["leads"], (old: any) =>
-        old?.map((l: any) =>
+      queryClient.setQueryData(["leads"], (old: Lead[] | undefined) =>
+        old?.map((l) =>
           l.id === lead.id ? { ...l, status: "lost" } : l
         )
       );
