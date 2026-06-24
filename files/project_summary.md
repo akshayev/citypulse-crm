@@ -4,7 +4,7 @@ This document serves as a comprehensive summary of all the work completed across
 
 ## 🚀 Phase 1: Security & Critical Data Bugs (100% Complete)
 
-*   **FinOps Race Condition:** Fixed utilizing a Supabase RPC function (`increment_gemini_usage`) for atomic updates, eliminating the risk of exceeding daily API quotas.
+*   **FinOps Race Condition:** Fixed utilizing a Supabase RPC function (`increment_gemini_calls`) for atomic updates, eliminating the risk of exceeding daily API quotas.
 *   **Async/Sync Mismatch:** Resolved in the DNC check and SerperAPI scraping logic, ensuring stable backend pipeline execution.
 *   **Backend API Authentication:** Added an `X-API-Key` verification layer to the Python FastAPI backend, securing endpoints against unauthorized access.
 *   **RLS Policies:** Fixed the `crm_leads` Row Level Security policy to correctly handle unassigned leads (NULL claim_by) and auto-assignments.

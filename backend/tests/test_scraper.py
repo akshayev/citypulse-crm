@@ -4,14 +4,21 @@ from backend.main import app
 
 client = TestClient(app)
 
+
 def test_scrape_endpoint_missing_auth():
-    response = client.post("/api/scrape", json={"city": "New York", "niche": "restaurants"})
+    response = client.post(
+        "/api/scrape", json={"city": "New York", "niche": "restaurants"}
+    )
     assert response.status_code == 401
+
 
 def test_scrape_endpoint_invalid_niche():
     headers = {"x-api-key": "dev-secret-key-123"}
-    response = client.post("/api/scrape", json={"city": "New York", "niche": "spaceships"}, headers=headers)
-    assert response.status_code == 422 # Pydantic validation error
+    response = client.post(
+        "/api/scrape", json={"city": "New York", "niche": "spaceships"}, headers=headers
+    )
+    assert response.status_code == 422  # Pydantic validation error
+
 
 def test_scrape_endpoint_success(mocker):
     # Mocking the background task logic so it doesn't actually hit SerpApi
@@ -21,6 +28,10 @@ def test_scrape_endpoint_success(mocker):
     mocker.patch("backend.main._run_full_pipeline", return_value=True)
 
     headers = {"x-api-key": "dev-secret-key-123"}
-    response = client.post("/api/scrape", json={"city": "New York", "niche": "restaurants"}, headers=headers)
+    response = client.post(
+        "/api/scrape",
+        json={"city": "New York", "niche": "restaurants"},
+        headers=headers,
+    )
     assert response.status_code == 200
     assert response.json()["status"] == "accepted"

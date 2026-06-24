@@ -1,4 +1,3 @@
-import os
 import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -6,11 +5,8 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi import HTTPException
 
-os.environ.setdefault("SUPABASE_URL", "http://localhost:54321")
-os.environ.setdefault("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
-os.environ.setdefault("GEMINI_API_KEY", "test-gemini-key")
-
-from backend.database import finops  # noqa: E402
+# Required env vars are set in conftest.py before this import.
+from backend.database import finops
 
 
 def test_gemini_quota_allows_when_rpc_returns_true(monkeypatch):

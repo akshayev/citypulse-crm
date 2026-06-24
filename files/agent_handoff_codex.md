@@ -7,7 +7,7 @@ Welcome to the CityPulse CRM project, Codex. This document serves as a direct ha
 We have successfully completed all technical debt remediation and core UX enhancement phases (Phases 1-4, plus most of 5):
 
 *   **Security & Data Integrity:**
-    *   Fixed a critical FinOps race condition using a Supabase RPC (`increment_gemini_usage`) for atomic counting.
+    *   Fixed a critical FinOps race condition using a Supabase RPC (`increment_gemini_calls`) for atomic counting.
     *   Resolved async/sync mismatches in the SerperAPI scraper and DNC checks.
     *   Secured the FastAPI backend via `X-API-Key` headers.
     *   Fixed `crm_leads` RLS policies to handle proper lead claiming and auto-assignment.

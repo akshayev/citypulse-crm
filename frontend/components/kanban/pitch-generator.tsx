@@ -67,7 +67,12 @@ export function PitchGenerator() {
       });
 
       if (response.status === 429) {
-        setError("Daily AI quota reached (50 calls). Try again tomorrow.");
+        // Use the server's message (it knows the real, configurable limit)
+        // rather than a hardcoded count.
+        const body = await response.json().catch(() => null);
+        setError(
+          body?.error || "Daily AI quota reached. Try again tomorrow."
+        );
         setIsStreaming(false);
         return;
       }

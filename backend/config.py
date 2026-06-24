@@ -2,6 +2,7 @@
 CityPulse CRM — Backend Configuration
 Loads environment variables and provides app-wide settings.
 """
+
 from pydantic_settings import BaseSettings
 from typing import List
 

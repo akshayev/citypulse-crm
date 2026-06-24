@@ -2,9 +2,9 @@ name: CityPulse CI
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "master", "main" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "master", "main" ]
 
 jobs:
   build:
@@ -58,7 +58,12 @@ jobs:
         black --check .
       working-directory: ./backend
 
+    - name: Smoke check — config loads
+      run: python -c "from backend.config import settings; print('Settings loaded OK')"
+      env:
+        SUPABASE_URL: http://localhost:54321
+        SUPABASE_SERVICE_ROLE_KEY: test-service-role-key
+        GEMINI_API_KEY: test-gemini-key
+
     - name: Run backend tests
-      run: |
-        pip install pytest
-        pytest backend/tests -q
+      run: python -m pytest backend/tests -q
