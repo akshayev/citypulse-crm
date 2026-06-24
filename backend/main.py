@@ -6,6 +6,7 @@ The Orchestrator: FastAPI webhooks that securely trigger background
 Selenium/SerpApi scrapes based on frontend payloads.
 Runs the full Bronze → Silver → Gold pipeline.
 """
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager
@@ -22,13 +23,17 @@ from backend.database.finops import (
     check_and_increment_scraper_quota,
     get_daily_usage,
 )
-from backend.database.dlq import get_pending_retries, mark_retrying, mark_resolved, mark_failed_retry
+from backend.database.dlq import (
+    get_pending_retries,
+    mark_retrying,
+    mark_resolved,
+    mark_failed_retry,
+)
 from fastapi import Header, Depends
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
@@ -36,6 +41,7 @@ logger = logging.getLogger(__name__)
 # ============================================================================
 # LIFESPAN: Background DLQ retry worker
 # ============================================================================
+
 
 async def dlq_retry_worker():
     """Background worker that retries failed DLQ tasks with exponential backoff."""
@@ -47,7 +53,9 @@ async def dlq_retry_worker():
                 task_type = task["task_type"]
                 payload = task["payload"]
 
-                logger.info(f"DLQ retry: {task_type} (task_id: {task_id}, attempt: {task['retry_count'] + 1})")
+                logger.info(
+                    f"DLQ retry: {task_type} (task_id: {task_id}, attempt: {task['retry_count'] + 1})"
+                )
                 await mark_retrying(task_id)
 
                 try:
@@ -112,8 +120,10 @@ app.add_middleware(
 # REQUEST/RESPONSE MODELS
 # ============================================================================
 
+
 class NicheEnum(str, Enum):
     """Predefined niches to prevent malformed queries (spec: 07-Forms-and-Validation.md)"""
+
     restaurants = "restaurants"
     salons = "salons"
     gyms = "gyms"
@@ -147,6 +157,7 @@ class ScrapeResponse(BaseModel):
 # SECURITY / AUTHENTICATION
 # ============================================================================
 
+
 async def verify_api_key(x_api_key: str = Header(None)):
     """Simple API Key verification for backend webhooks."""
     expected_key = getattr(settings, "backend_api_key", "dev-secret-key-123")
@@ -158,6 +169,7 @@ async def verify_api_key(x_api_key: str = Header(None)):
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
+
 
 @app.get("/api/health")
 async def health_check():
@@ -172,7 +184,9 @@ async def get_usage():
     return usage
 
 
-@app.post("/api/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key)])
+@app.post(
+    "/api/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key)]
+)
 async def trigger_scrape(request: ScrapeRequest, background_tasks: BackgroundTasks):
     """
     Trigger a full scraping pipeline: Bronze → Silver → Gold.
@@ -192,7 +206,7 @@ async def trigger_scrape(request: ScrapeRequest, background_tasks: BackgroundTas
     return ScrapeResponse(
         status="accepted",
         message=f"Scraping pipeline started for '{request.niche.value}' in '{request.city}'. "
-                f"Results will appear in the Kanban board via real-time sync.",
+        f"Results will appear in the Kanban board via real-time sync.",
     )
 
 
@@ -222,7 +236,9 @@ async def _run_full_pipeline(city: str, niche: str):
         logger.error(f"Pipeline aborted at Silver: {clean_result}")
         return
 
-    logger.info(f"Silver complete: {clean_result['cleaned']} cleaned, {clean_result['blocked']} blocked")
+    logger.info(
+        f"Silver complete: {clean_result['cleaned']} cleaned, {clean_result['blocked']} blocked"
+    )
 
     # Step 3: Gold — Score with AI
     score_result = await score_batch_from_scrape(scrape_id=scrape_id)
@@ -249,6 +265,7 @@ async def score_lead(place_id: str):
 
 if __name__ == "__main__":
     import uvicorn
+
     uvicorn.run(
         "backend.main:app",
         host=settings.host,

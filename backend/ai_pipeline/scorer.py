@@ -2,10 +2,11 @@
 CityPulse CRM — AI Heat Score Evaluator (Gold Layer)
 Source: 01-System-Architecture.md, 11-LLM-Prompt-Architecture.md
 
-Uses Gemini 1.5 Flash to read Silver layer data and assign
-a Heat Score (0-100) based on digital footprint gaps.
+Uses Gemini 2.5 Flash (with a free Groq fallback) to read Silver layer data
+and assign a Heat Score (0-100) based on digital footprint gaps.
 Writes scored leads to crm_leads (Gold layer).
 """
+
 import json
 import logging
 import asyncio
@@ -125,10 +126,14 @@ async def _llm_heat_score(context: str) -> dict:
         try:
             return await asyncio.to_thread(_gemini_score_sync, context)
         except Exception as e:
-            logger.warning(f"Gemini scoring failed ({e}); attempting Groq free-tier fallback.")
+            logger.warning(
+                f"Gemini scoring failed ({e}); attempting Groq free-tier fallback."
+            )
 
     if settings.groq_api_key:
-        logger.info(f"Heat scoring via Groq free-tier fallback (model: {settings.groq_model}).")
+        logger.info(
+            f"Heat scoring via Groq free-tier fallback (model: {settings.groq_model})."
+        )
         return await asyncio.to_thread(_groq_score_sync, context)
 
     if not gemini_allowed:
@@ -139,12 +144,14 @@ async def _llm_heat_score(context: str) -> dict:
                 "and no GROQ_API_KEY fallback configured."
             ),
         )
-    raise RuntimeError("Gemini scoring failed and no GROQ_API_KEY configured for fallback.")
+    raise RuntimeError(
+        "Gemini scoring failed and no GROQ_API_KEY configured for fallback."
+    )
 
 
 async def score_single_lead(place_id: str) -> dict:
     """
-    Score a single Silver layer shop using Gemini 1.5 Flash.
+    Score a single Silver layer shop using Gemini 2.5 Flash (Groq fallback).
     Inserts the scored lead into the Gold layer (crm_leads).
     """
     db = get_supabase_client()
@@ -175,23 +182,25 @@ async def score_single_lead(place_id: str) -> dict:
             "status": "new",
         }
 
-        await asyncio.to_thread(
-            db.table("crm_leads").insert(lead_data).execute
-        )
+        await asyncio.to_thread(db.table("crm_leads").insert(lead_data).execute)
 
-        logger.info(f"Gold layer: Scored {shop['shop_name']} → Heat Score: {heat_score}")
+        logger.info(
+            f"Gold layer: Scored {shop['shop_name']} → Heat Score: {heat_score}"
+        )
 
         return {
             "status": "success",
             "place_id": place_id,
             "shop_name": shop["shop_name"],
             "heat_score": heat_score,
-            "reasoning": reasoning
+            "reasoning": reasoning,
         }
 
     except HTTPException as e:
         if e.status_code == 429:
-            logger.warning(f"Gemini quota exhausted while scoring {place_id}: {e.detail}")
+            logger.warning(
+                f"Gemini quota exhausted while scoring {place_id}: {e.detail}"
+            )
             return {"status": "quota_exceeded", "error": e.detail}
         raise
 
@@ -201,9 +210,7 @@ async def score_single_lead(place_id: str) -> dict:
 
         # Push to DLQ — pipeline never crashes
         await push_to_dlq(
-            task_type="score",
-            payload={"place_id": place_id},
-            error_message=error_msg
+            task_type="score", payload={"place_id": place_id}, error_message=error_msg
         )
 
         return {"status": "error", "error": error_msg, "dlq": True}
@@ -236,10 +243,7 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
     for shop in result.data:
         # Check if already scored
         existing = await asyncio.to_thread(
-            db.table("crm_leads")
-            .select("id")
-            .eq("place_id", shop["place_id"])
-            .execute
+            db.table("crm_leads").select("id").eq("place_id", shop["place_id"]).execute
         )
 
         if existing.data:
@@ -252,17 +256,21 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
             scored += 1
         elif result.get("status") == "quota_exceeded":
             quota_exhausted = True
-            logger.warning("Stopping batch scoring early due to daily Gemini quota exhaustion.")
+            logger.warning(
+                "Stopping batch scoring early due to daily Gemini quota exhaustion."
+            )
             break
         else:
             errors += 1
 
-    logger.info(f"Gold layer batch: Scored {scored}, Errors: {errors} (scrape_id: {scrape_id})")
+    logger.info(
+        f"Gold layer batch: Scored {scored}, Errors: {errors} (scrape_id: {scrape_id})"
+    )
 
     return {
         "status": "partial" if quota_exhausted else "success",
         "scrape_id": scrape_id,
         "scored": scored,
         "errors": errors,
-        "quota_exhausted": quota_exhausted
+        "quota_exhausted": quota_exhausted,
     }

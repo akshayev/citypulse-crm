@@ -5,6 +5,7 @@ Source: 04-Tech-Stack.md
 Fallback scraper using headless Selenium when SerpApi is unavailable.
 Scrapes Google Maps directly via browser automation.
 """
+
 import json
 import logging
 from selenium import webdriver
@@ -38,9 +39,7 @@ def _create_headless_driver() -> webdriver.Chrome:
 
 
 async def scrape_with_selenium(
-    city: str,
-    niche: str,
-    created_by: str | None = None
+    city: str, niche: str, created_by: str | None = None
 ) -> dict:
     """
     Fallback scraper using Selenium to scrape Google Maps.
@@ -96,8 +95,8 @@ async def scrape_with_selenium(
             "search_metadata": {
                 "query": query,
                 "source": "selenium",
-                "total_results": len(results)
-            }
+                "total_results": len(results),
+            },
         }
 
         db = get_supabase_client()
@@ -105,7 +104,7 @@ async def scrape_with_selenium(
             "raw_data": raw_data,
             "city": city,
             "niche": niche,
-            "source": "selenium"
+            "source": "selenium",
         }
 
         if created_by:
@@ -114,14 +113,16 @@ async def scrape_with_selenium(
         result = db.table("raw_scrapes").insert(insert_data).execute()
         scrape_id = result.data[0]["id"]
 
-        logger.info(f"Bronze layer (Selenium): Stored {len(results)} results (scrape_id: {scrape_id})")
+        logger.info(
+            f"Bronze layer (Selenium): Stored {len(results)} results (scrape_id: {scrape_id})"
+        )
 
         return {
             "status": "success",
             "scrape_id": scrape_id,
             "query": query,
             "count": len(results),
-            "raw_data": raw_data
+            "raw_data": raw_data,
         }
 
     except Exception as e:
@@ -131,7 +132,7 @@ async def scrape_with_selenium(
         await push_to_dlq(
             task_type="scrape",
             payload={"city": city, "niche": niche, "source": "selenium"},
-            error_message=error_msg
+            error_message=error_msg,
         )
 
         return {"status": "error", "error": error_msg, "dlq": True}

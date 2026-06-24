@@ -8,6 +8,7 @@ Python logic that:
 3. Aggressively filters out DNC (Do Not Contact) leads
 4. Inserts safe data into cleaned_shops (Silver layer)
 """
+
 import re
 import logging
 from backend.database.supabase_client import get_supabase_client
@@ -68,7 +69,10 @@ async def _check_dnc(phone: str | None, website: str | None) -> bool:
         domain = _extract_domain(website)
         if domain:
             result = await asyncio.to_thread(
-                db.table("dnc_registry").select("id").eq("website_domain", domain).execute
+                db.table("dnc_registry")
+                .select("id")
+                .eq("website_domain", domain)
+                .execute
             )
             if result.data:
                 logger.info(f"DNC BLOCK: Domain {domain} is on blocklist")
@@ -111,7 +115,9 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
         for item in local_results:
             try:
                 # Extract key fields from SerpApi/Selenium response
-                place_id = item.get("place_id") or item.get("data_id") or item.get("data_cid")
+                place_id = (
+                    item.get("place_id") or item.get("data_id") or item.get("data_cid")
+                )
 
                 if not place_id:
                     skipped_count += 1
@@ -158,10 +164,9 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
                     shop_data["lat_lng"] = f"({lat},{lng})"
 
                 await asyncio.to_thread(
-                    db.table("cleaned_shops").upsert(
-                        shop_data,
-                        on_conflict="place_id"
-                    ).execute
+                    db.table("cleaned_shops")
+                    .upsert(shop_data, on_conflict="place_id")
+                    .execute
                 )
 
                 cleaned_count += 1
@@ -183,7 +188,7 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
             "scrape_id": scrape_id,
             "cleaned": cleaned_count,
             "blocked": blocked_count,
-            "skipped": skipped_count
+            "skipped": skipped_count,
         }
 
     except Exception as e:
@@ -191,9 +196,7 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
         logger.error(error_msg)
 
         await push_to_dlq(
-            task_type="clean",
-            payload={"scrape_id": scrape_id},
-            error_message=error_msg
+            task_type="clean", payload={"scrape_id": scrape_id}, error_message=error_msg
         )
 
         return {"status": "error", "error": error_msg, "dlq": True}
