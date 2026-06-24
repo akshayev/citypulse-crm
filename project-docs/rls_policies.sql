@@ -13,7 +13,8 @@ ALTER TABLE dlq_tasks ENABLE ROW LEVEL SECURITY;
 
 -- ==============================================================================
 -- ADMIN BYPASS: Users with role = 'admin' have full access
--- Applied via custom JWT claim: auth.jwt() -> 'user_metadata' ->> 'role'
+-- Trust ONLY app_metadata (server-set), NOT user_metadata (user-editable).
+-- Admins are promoted out-of-band via the service role / Admin API.
 -- ==============================================================================
 
 -- Helper function to check admin status
@@ -22,12 +23,32 @@ RETURNS BOOLEAN AS $$
 BEGIN
     RETURN (
         COALESCE(
-            auth.jwt() -> 'user_metadata' ->> 'role',
+            auth.jwt() -> 'app_metadata' ->> 'role',
             ''
         ) = 'admin'
     );
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Default new users to a non-privileged role in app_metadata so the role
+-- model is explicit and cannot be self-escalated via user_metadata.
+CREATE OR REPLACE FUNCTION set_default_app_role()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NOT (COALESCE(NEW.raw_app_meta_data, '{}'::jsonb) ? 'role') THEN
+        NEW.raw_app_meta_data =
+            COALESCE(NEW.raw_app_meta_data, '{}'::jsonb)
+            || jsonb_build_object('role', 'sales_rep');
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+DROP TRIGGER IF EXISTS set_default_app_role_trigger ON auth.users;
+CREATE TRIGGER set_default_app_role_trigger
+    BEFORE INSERT ON auth.users
+    FOR EACH ROW
+    EXECUTE FUNCTION set_default_app_role();
 
 -- ==============================================================================
 -- CRM_LEADS: Core Kanban table
