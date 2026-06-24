@@ -49,8 +49,11 @@ export default function SignupPage() {
       options: {
         emailRedirectTo: `${window.location.origin}/login`,
         data: {
+          // Only non-privileged profile data here. The role lives in
+          // app_metadata (set server-side by a DB trigger), because
+          // user_metadata is editable by the user and must NOT be trusted
+          // for authorization.
           full_name: data.fullName,
-          role: "sales_rep", // Default role; admins set manually
         },
       },
     });
