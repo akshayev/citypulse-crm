@@ -1,7 +1,13 @@
+import { getRouteUser, unauthorized } from "@/lib/auth/require-user";
+
 const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 const BACKEND_API_KEY = process.env.BACKEND_API_KEY;
 
 export async function GET() {
+  // Gate: only authenticated users may read usage stats.
+  const { user } = await getRouteUser();
+  if (!user) return unauthorized();
+
   if (!BACKEND_API_KEY) {
     return new Response(
       JSON.stringify({ detail: "Backend API key is not configured on the frontend server." }),
