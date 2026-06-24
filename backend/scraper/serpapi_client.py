@@ -2,11 +2,14 @@
 CityPulse CRM — SerpApi Google Maps Scraper
 Source: 01-System-Architecture.md, 12-Features-Roadmap.md
 
-Scrapes Google Maps for local businesses using SerpApi.
-Results are stored as raw JSON in the Bronze layer (raw_scrapes table).
+Scrapes Google Maps for local businesses. SerpApi is the SUPPORTED/primary
+path; the headless Selenium fallback is best-effort only (see notes on
+scrape_google_maps_selenium). Results are stored as raw JSON in the Bronze
+layer (raw_scrapes table).
 """
 
 import json
+import hashlib
 import logging
 import asyncio
 from typing import List, Dict, Any
@@ -96,61 +99,101 @@ async def scrape_google_maps(
         return {"status": "error", "error": error_msg, "dlq": push_to_dlq_on_error}
 
 
+def _synthetic_place_id(name: str, locality: str) -> str:
+    """
+    Stable synthetic id for Selenium-scraped businesses.
+
+    Google Maps does not reliably expose a stable place_id in the results feed,
+    and the Silver layer drops rows without a place_id. A deterministic hash of
+    (name, locality) lets these rows flow through Silver/Gold and makes
+    re-scraping the same business idempotent (it upserts the same row).
+    """
+    digest = hashlib.sha1(
+        f"{name}|{locality}".strip().lower().encode("utf-8")
+    ).hexdigest()
+    return f"sel_{digest[:24]}"
+
+
 async def scrape_google_maps_selenium(city: str, niche: str) -> dict:
     """
-    Headless Selenium scraper for Google Maps as a cost-saving or API-failure fallback.
+    Best-effort headless Selenium fallback for Google Maps.
+
+    IMPORTANT — this is a brittle, best-effort fallback, not a supported path:
+    - Google Maps' DOM/class names change often, so extraction may yield nothing.
+      When it does, we return count=0 and the caller reports no_results; we never
+      store a misleading "success" Bronze row with zero usable businesses.
+    - It needs a real Chrome/Chromedriver and will NOT run on serverless web
+      hosts (Vercel/Render web services). SerpApi is the supported scraper.
     """
     query = f"{niche} in {city}"
     url = f"https://www.google.com/maps/search/{query.replace(' ', '+')}"
 
-    logger.info(f"Starting Selenium fallback scrape: {url}")
+    logger.info(f"Starting best-effort Selenium fallback scrape: {url}")
 
     options = Options()
-    options.add_argument("--headless")
+    options.add_argument("--headless=new")
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
     options.add_argument("--disable-gpu")
     options.add_argument(
-        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36"
+        "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
 
-    results = []
-
     def _run_selenium():
+        results = []
         driver = webdriver.Chrome(
             service=Service(ChromeDriverManager().install()), options=options
         )
         try:
             driver.get(url)
-            # Wait for search results container
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "div[role='feed']"))
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[role='feed']"))
             )
 
-            # Simple extraction logic (placeholders for actual class names which vary)
-            # In a real SDE scenario, we'd use more robust selectors or a specialized library
-            cards = driver.find_elements(
-                By.CSS_SELECTOR, "div.Nv2Ybe"
-            )  # Common Maps card container
-            for card in cards[:10]:  # Limit to 10 for fallback
+            # Result cards are the children of the results feed. The listing
+            # link's aria-label carries the business name and is more stable
+            # than the frequently-rotated CSS class names.
+            cards = driver.find_elements(By.CSS_SELECTOR, "[role='feed'] > div")
+            for card in cards[:20]:
                 try:
-                    name = card.find_element(By.CSS_SELECTOR, ".qBF1Pd").text
+                    link = card.find_element(By.CSS_SELECTOR, "a[href*='/maps/place/']")
+                    name = (link.get_attribute("aria-label") or "").strip()
+                    if not name:
+                        continue
+
+                    # Best-effort address (may be absent); never fabricate it.
+                    address = None
+                    spans = [
+                        s.text.strip()
+                        for s in card.find_elements(By.CSS_SELECTOR, "span")
+                        if s.text.strip()
+                    ]
+                    if spans:
+                        address = spans[-1]
+
                     results.append(
                         {
+                            "place_id": _synthetic_place_id(name, city),
                             "title": name,
-                            "address": "Extracted via Selenium",
+                            "address": address,
                             "type": niche,
                             "source": "selenium_fallback",
                         }
                     )
-                except:
+                except Exception:
                     continue
-
             return results
         finally:
             driver.quit()
 
     extracted = await asyncio.to_thread(_run_selenium)
+
+    if not extracted:
+        logger.warning(
+            f"Selenium fallback extracted no usable results for '{query}'; "
+            "returning no_results instead of an empty 'success'."
+        )
 
     return {
         "count": len(extracted),
