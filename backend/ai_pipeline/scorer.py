@@ -8,6 +8,8 @@ Writes scored leads to crm_leads (Gold layer).
 """
 import json
 import logging
+import asyncio
+import httpx
 from fastapi import HTTPException
 from google import genai
 from google.genai import types
@@ -55,6 +57,91 @@ def _build_business_context(shop: dict) -> str:
     return "\n".join(parts)
 
 
+def _parse_score_json(response_text: str) -> dict:
+    """Parse the model's JSON output into a clamped heat_score + reasoning."""
+    response_text = (response_text or "").strip()
+    # Handle potential markdown code blocks in the response
+    if response_text.startswith("```"):
+        response_text = response_text.split("\n", 1)[1]
+        response_text = response_text.rsplit("```", 1)[0]
+    score_data = json.loads(response_text)
+    heat_score = max(0, min(100, int(score_data.get("heat_score", 0))))
+    return {"heat_score": heat_score, "reasoning": score_data.get("reasoning", "")}
+
+
+def _gemini_score_sync(context: str) -> dict:
+    """Score via Gemini (blocking; call inside a thread)."""
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=context,
+        config=types.GenerateContentConfig(
+            system_instruction=HEAT_SCORE_SYSTEM_PROMPT,
+            temperature=0.1,  # Low temperature for deterministic scoring
+            response_mime_type="application/json",
+        ),
+    )
+    return _parse_score_json(response.text)
+
+
+def _groq_score_sync(context: str) -> dict:
+    """Score via Groq's free OpenAI-compatible API (blocking; call inside a thread)."""
+    resp = httpx.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+        json={
+            "model": settings.groq_model,
+            "messages": [
+                {"role": "system", "content": HEAT_SCORE_SYSTEM_PROMPT},
+                {"role": "user", "content": context},
+            ],
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+        },
+        timeout=30.0,
+    )
+    resp.raise_for_status()
+    content = resp.json()["choices"][0]["message"]["content"]
+    return _parse_score_json(content)
+
+
+async def _llm_heat_score(context: str) -> dict:
+    """Heat-score `context`, preferring Gemini and falling back to the free Groq tier.
+
+    Falls back to Groq when Gemini errors OR when the daily Gemini FinOps cap is
+    reached. Raises if neither provider is available.
+    """
+    gemini_allowed = True
+    try:
+        # Reserve a Gemini call against the daily FinOps cap (atomic RPC)
+        await check_and_increment_gemini_quota()
+    except HTTPException as e:
+        if e.status_code == 429:
+            gemini_allowed = False  # over cap → try the free fallback instead
+        else:
+            raise
+
+    if gemini_allowed:
+        try:
+            return await asyncio.to_thread(_gemini_score_sync, context)
+        except Exception as e:
+            logger.warning(f"Gemini scoring failed ({e}); attempting Groq free-tier fallback.")
+
+    if settings.groq_api_key:
+        logger.info(f"Heat scoring via Groq free-tier fallback (model: {settings.groq_model}).")
+        return await asyncio.to_thread(_groq_score_sync, context)
+
+    if not gemini_allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"Daily Gemini quota reached ({settings.max_gemini_calls_per_day} calls) "
+                "and no GROQ_API_KEY fallback configured."
+            ),
+        )
+    raise RuntimeError("Gemini scoring failed and no GROQ_API_KEY configured for fallback.")
+
+
 async def score_single_lead(place_id: str) -> dict:
     """
     Score a single Silver layer shop using Gemini 1.5 Flash.
@@ -63,10 +150,6 @@ async def score_single_lead(place_id: str) -> dict:
     db = get_supabase_client()
 
     try:
-        import asyncio
-        # Check FinOps quota first (spec: 03-Security) using the atomic RPC
-        await check_and_increment_gemini_quota()
-
         # Fetch the cleaned shop data
         result = await asyncio.to_thread(
             db.table("cleaned_shops").select("*").eq("place_id", place_id).execute
@@ -78,38 +161,11 @@ async def score_single_lead(place_id: str) -> dict:
         shop = result.data[0]
         context = _build_business_context(shop)
 
-        # Call Gemini 1.5 Flash in a thread
-        client = genai.Client(api_key=settings.gemini_api_key)
-
-        def _generate_content():
-            return client.models.generate_content(
-                model="gemini-1.5-flash",
-                contents=context,
-                config=types.GenerateContentConfig(
-                    system_instruction=HEAT_SCORE_SYSTEM_PROMPT,
-                    temperature=0.1,  # Low temperature for deterministic scoring
-                    response_mime_type="application/json",
-                )
-            )
-
-        response = await asyncio.to_thread(_generate_content)
-
-        # (FinOps counter was already atomically incremented above)
-
-        # Parse the JSON response
-        response_text = response.text.strip()
-
-        # Handle potential markdown code blocks in response
-        if response_text.startswith("```"):
-            response_text = response_text.split("\n", 1)[1]
-            response_text = response_text.rsplit("```", 1)[0]
-
-        score_data = json.loads(response_text)
-        heat_score = int(score_data.get("heat_score", 0))
-        reasoning = score_data.get("reasoning", "")
-
-        # Clamp score to 0-100
-        heat_score = max(0, min(100, heat_score))
+        # Score via Gemini (subject to the FinOps cap), falling back to the
+        # free Groq tier when Gemini errors or the daily cap is reached.
+        score = await _llm_heat_score(context)
+        heat_score = score["heat_score"]
+        reasoning = score["reasoning"]
 
         # Insert into Gold layer (crm_leads)
         lead_data = {

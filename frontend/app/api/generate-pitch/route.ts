@@ -1,4 +1,5 @@
 import { google } from "@ai-sdk/google";
+import { groq } from "@ai-sdk/groq";
 import { streamText } from "ai";
 
 export const runtime = "edge";
@@ -52,15 +53,58 @@ export async function POST(request: Request) {
 Their heat score is ${heatScore}/100. 
 Context: ${reasoning}`;
 
-    // Stream the response using Vercel AI SDK
-    const result = streamText({
-      model: google("gemini-1.5-flash"),
-      system: systemPrompt,
-      prompt: userPrompt,
-      temperature: 0.7,
+    // Stream the response via the Vercel AI SDK, preferring Gemini and falling
+    // back to the free Groq tier when Gemini errors (e.g. quota or key issues).
+    const geminiModel = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+    const groqModel = process.env.GROQ_MODEL || "llama-3.3-70b-versatile";
+    const hasGroq = !!process.env.GROQ_API_KEY;
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        let emittedAny = false;
+        const run = async (
+          model: Parameters<typeof streamText>[0]["model"]
+        ) => {
+          const result = streamText({
+            model,
+            system: systemPrompt,
+            prompt: userPrompt,
+            temperature: 0.7,
+          });
+          for await (const chunk of result.textStream) {
+            emittedAny = true;
+            controller.enqueue(encoder.encode(chunk));
+          }
+        };
+
+        try {
+          await run(google(geminiModel));
+        } catch (err) {
+          console.error("Gemini pitch failed:", err);
+          // Only safe to switch providers if nothing was streamed yet.
+          if (hasGroq && !emittedAny) {
+            try {
+              await run(groq(groqModel));
+            } catch (err2) {
+              controller.error(err2);
+              return;
+            }
+          } else {
+            controller.error(err);
+            return;
+          }
+        }
+        controller.close();
+      },
     });
 
-    return result.toTextStreamResponse();
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/plain; charset=utf-8",
+        "Cache-Control": "no-cache",
+      },
+    });
   } catch (error) {
     console.error("Pitch generation error:", error);
     return new Response(
