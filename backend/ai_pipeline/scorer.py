@@ -12,12 +12,14 @@ import logging
 import asyncio
 import httpx
 from fastapi import HTTPException
+from pydantic import ValidationError
 from google import genai
 from google.genai import types
 from backend.config import settings
 from backend.database.supabase_client import get_supabase_client
 from backend.database.finops import check_and_increment_gemini_quota
 from backend.database.dlq import push_to_dlq
+from backend.ai_pipeline.contracts import ScoredLead
 
 logger = logging.getLogger(__name__)
 
@@ -180,16 +182,24 @@ async def score_single_lead(
         heat_score = score["heat_score"]
         reasoning = score["reasoning"]
 
+        # Gold DQ gate: validate the scored lead against its write contract
+        # (heat_score in 0-100, non-blank reasoning) before persisting. A bad
+        # LLM output is treated as a scoring failure (retryable via the DLQ).
+        try:
+            lead = ScoredLead(
+                place_id=place_id, heat_score=heat_score, reasoning=reasoning
+            )
+        except ValidationError as ve:
+            raise ValueError(
+                f"Scored lead failed DQ contract: {ve.errors(include_url=False)}"
+            )
+
         # Upsert into Gold layer (crm_leads). on_conflict=place_id makes scoring
         # idempotent (no duplicate leads under concurrency / re-scoring) and only
         # touches the scoring fields — status/assigned_to/column_order are NOT in
         # the payload, so a re-score never resets a lead's Kanban state (a new
         # row falls back to the schema default status='new').
-        lead_data = {
-            "place_id": place_id,
-            "heat_score": heat_score,
-            "reasoning": reasoning,
-        }
+        lead_data = lead.model_dump()
 
         await asyncio.to_thread(
             db.table("crm_leads").upsert(lead_data, on_conflict="place_id").execute
