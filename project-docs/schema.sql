@@ -50,7 +50,7 @@ CREATE TYPE lead_status AS ENUM ('new', 'contacting', 'won', 'lost');
 
 CREATE TABLE IF NOT EXISTS crm_leads (
     id          UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    place_id    VARCHAR(255) REFERENCES cleaned_shops(place_id) ON DELETE CASCADE,
+    place_id    VARCHAR(255) UNIQUE REFERENCES cleaned_shops(place_id) ON DELETE CASCADE,
     heat_score  INTEGER CHECK (heat_score >= 0 AND heat_score <= 100),
     reasoning   TEXT,
     status      lead_status DEFAULT 'new',
