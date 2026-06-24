@@ -101,14 +101,30 @@ export function KanbanBoard() {
     mutationFn: async ({
       leadId,
       newStatus,
+      currentAssignedTo,
     }: {
       leadId: string;
       newStatus: string;
+      currentAssignedTo: string | null;
     }) => {
       const supabase = createClient();
+      const updates: { status: string; assigned_to?: string } = {
+        status: newStatus,
+      };
+
+      // Claim-on-move: an unassigned lead must be assigned to the current user,
+      // otherwise the RLS WITH CHECK (assigned_to = auth.uid()) rejects the
+      // update for sales reps and the card silently snaps back.
+      if (!currentAssignedTo) {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user) updates.assigned_to = user.id;
+      }
+
       const { error } = await supabase
         .from("crm_leads")
-        .update({ status: newStatus })
+        .update(updates)
         .eq("id", leadId);
 
       if (error) throw error;
@@ -181,8 +197,12 @@ export function KanbanBoard() {
       const lead = leads.find((l) => l.id === leadId);
       if (!lead || lead.status === newStatus) return;
 
-      // Optimistic update
-      moveLead.mutate({ leadId, newStatus });
+      // Optimistic update (claims the lead if currently unassigned)
+      moveLead.mutate({
+        leadId,
+        newStatus,
+        currentAssignedTo: lead.assigned_to,
+      });
     },
     [leads, moveLead, setActiveDragId]
   );
