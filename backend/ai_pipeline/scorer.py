@@ -180,15 +180,20 @@ async def score_single_lead(
         heat_score = score["heat_score"]
         reasoning = score["reasoning"]
 
-        # Insert into Gold layer (crm_leads)
+        # Upsert into Gold layer (crm_leads). on_conflict=place_id makes scoring
+        # idempotent (no duplicate leads under concurrency / re-scoring) and only
+        # touches the scoring fields — status/assigned_to/column_order are NOT in
+        # the payload, so a re-score never resets a lead's Kanban state (a new
+        # row falls back to the schema default status='new').
         lead_data = {
             "place_id": place_id,
             "heat_score": heat_score,
             "reasoning": reasoning,
-            "status": "new",
         }
 
-        await asyncio.to_thread(db.table("crm_leads").insert(lead_data).execute)
+        await asyncio.to_thread(
+            db.table("crm_leads").upsert(lead_data, on_conflict="place_id").execute
+        )
 
         logger.info(
             f"Gold layer: Scored {shop['shop_name']} → Heat Score: {heat_score}"
