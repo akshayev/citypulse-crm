@@ -3,12 +3,19 @@ CityPulse CRM — Backend Configuration
 Loads environment variables and provides app-wide settings.
 """
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings
 from typing import List
+
+# Insecure placeholder values that must never be used in production.
+_INSECURE_API_KEYS = {"", "dev-secret-key-123", "changeme"}
 
 
 class Settings(BaseSettings):
     """Application settings loaded from environment variables."""
+
+    # Deployment environment: "development" (default) or "production".
+    app_env: str = "development"
 
     # Supabase (Postgres + Auth)
     supabase_url: str
@@ -37,6 +44,16 @@ class Settings(BaseSettings):
     @property
     def cors_origin_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
+
+    @model_validator(mode="after")
+    def _guard_production_secrets(self) -> "Settings":
+        """Fail closed: refuse to start in production with an insecure API key."""
+        if self.app_env == "production" and self.backend_api_key in _INSECURE_API_KEYS:
+            raise ValueError(
+                "BACKEND_API_KEY must be set to a strong, non-default value when "
+                "APP_ENV=production (got an insecure placeholder)."
+            )
+        return self
 
     class Config:
         env_file = ".env"

@@ -22,14 +22,17 @@ Rules:
 4. End with a soft call to action.
 5. Output plain text only. Do not use markdown formatting or emojis.`;
 
-import { createClient } from "@/lib/supabase/server";
+import { getRouteUser, unauthorized } from "@/lib/auth/require-user";
 
 export async function POST(request: Request) {
   try {
+    // Gate: only authenticated users may generate pitches (burns LLM budget).
+    const { user, supabase } = await getRouteUser();
+    if (!user) return unauthorized();
+
     const { shopName, reasoning, city, heatScore } = await request.json();
 
     // Check FinOps quota (spec: 03-Security)
-    const supabase = await createClient();
     const maxCalls = parseInt(process.env.NEXT_PUBLIC_GEMINI_DAILY_LIMIT || "50", 10);
     
     const { data: isAllowed, error: rpcError } = await supabase.rpc(
