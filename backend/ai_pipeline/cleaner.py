@@ -11,8 +11,10 @@ Python logic that:
 
 import re
 import logging
+from pydantic import ValidationError
 from backend.database.supabase_client import get_supabase_client
 from backend.database.dlq import push_to_dlq
+from backend.ai_pipeline.contracts import CleanedShop
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +118,7 @@ async def clean_raw_scrape(
         cleaned_count = 0
         blocked_count = 0
         skipped_count = 0
+        dq_failed_count = 0
 
         for item in local_results:
             try:
@@ -168,6 +171,19 @@ async def clean_raw_scrape(
                 if lat and lng:
                     shop_data["lat_lng"] = f"({lat},{lng})"
 
+                # Silver DQ gate: validate the row against the write contract.
+                # A failing row is quarantined (counted + skipped), never written,
+                # so bad data cannot reach the Gold/serving layer.
+                try:
+                    CleanedShop(**shop_data)
+                except ValidationError as ve:
+                    dq_failed_count += 1
+                    logger.warning(
+                        f"DQ reject (Silver) place_id={shop_data.get('place_id')}: "
+                        f"{ve.errors(include_url=False)}"
+                    )
+                    continue
+
                 await asyncio.to_thread(
                     db.table("cleaned_shops")
                     .upsert(shop_data, on_conflict="place_id")
@@ -181,9 +197,20 @@ async def clean_raw_scrape(
                 skipped_count += 1
                 continue
 
+        # DQ gate: warn if the Silver contract pass-rate is poor. "Attempted"
+        # = rows that had an id and passed DNC (i.e. were candidates to write).
+        attempted = cleaned_count + dq_failed_count
+        pass_rate = (cleaned_count / attempted) if attempted else 1.0
+        if attempted and pass_rate < 0.8:
+            logger.warning(
+                f"DQ gate: Silver pass-rate {pass_rate:.0%} below 80% "
+                f"({dq_failed_count}/{attempted} rejected, scrape_id: {scrape_id})"
+            )
+
         logger.info(
             f"Silver layer: Cleaned {cleaned_count}, "
             f"Blocked by DNC: {blocked_count}, "
+            f"DQ-rejected: {dq_failed_count}, "
             f"Skipped: {skipped_count} "
             f"(scrape_id: {scrape_id})"
         )
@@ -193,6 +220,8 @@ async def clean_raw_scrape(
             "scrape_id": scrape_id,
             "cleaned": cleaned_count,
             "blocked": blocked_count,
+            "dq_failed": dq_failed_count,
+            "dq_pass_rate": round(pass_rate, 3),
             "skipped": skipped_count,
         }
 
