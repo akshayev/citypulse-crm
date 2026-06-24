@@ -81,7 +81,9 @@ async def _check_dnc(phone: str | None, website: str | None) -> bool:
     return False
 
 
-async def clean_raw_scrape(scrape_id: str) -> dict:
+async def clean_raw_scrape(
+    scrape_id: str, *, push_to_dlq_on_error: bool = True
+) -> dict:
     """
     Process a Bronze layer raw scrape into Silver layer cleaned_shops.
 
@@ -89,6 +91,9 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
     2. Extract key fields
     3. Cross-check DNC registry
     4. Insert safe records into cleaned_shops
+
+    push_to_dlq_on_error: True on the first attempt; the DLQ worker passes False
+    on retries so it does not create duplicate DLQ rows.
     """
     db = get_supabase_client()
     import asyncio
@@ -195,8 +200,11 @@ async def clean_raw_scrape(scrape_id: str) -> dict:
         error_msg = f"Silver cleaning failed for scrape {scrape_id}: {str(e)}"
         logger.error(error_msg)
 
-        await push_to_dlq(
-            task_type="clean", payload={"scrape_id": scrape_id}, error_message=error_msg
-        )
+        if push_to_dlq_on_error:
+            await push_to_dlq(
+                task_type="clean",
+                payload={"scrape_id": scrape_id},
+                error_message=error_msg,
+            )
 
-        return {"status": "error", "error": error_msg, "dlq": True}
+        return {"status": "error", "error": error_msg, "dlq": push_to_dlq_on_error}

@@ -149,10 +149,16 @@ async def _llm_heat_score(context: str) -> dict:
     )
 
 
-async def score_single_lead(place_id: str) -> dict:
+async def score_single_lead(
+    place_id: str, *, push_to_dlq_on_error: bool = True
+) -> dict:
     """
     Score a single Silver layer shop using Gemini 2.5 Flash (Groq fallback).
     Inserts the scored lead into the Gold layer (crm_leads).
+
+    push_to_dlq_on_error: True on the first (pipeline) attempt so failures are
+    enqueued for retry. The DLQ worker passes False on retries so it does not
+    create duplicate DLQ rows (it owns retry bookkeeping itself).
     """
     db = get_supabase_client()
 
@@ -208,12 +214,16 @@ async def score_single_lead(place_id: str) -> dict:
         error_msg = f"Gemini scoring failed for {place_id}: {str(e)}"
         logger.error(error_msg)
 
-        # Push to DLQ — pipeline never crashes
-        await push_to_dlq(
-            task_type="score", payload={"place_id": place_id}, error_message=error_msg
-        )
+        # Enqueue for retry only on the first attempt; the DLQ worker owns
+        # retry bookkeeping and must not re-enqueue (avoids duplicate rows).
+        if push_to_dlq_on_error:
+            await push_to_dlq(
+                task_type="score",
+                payload={"place_id": place_id},
+                error_message=error_msg,
+            )
 
-        return {"status": "error", "error": error_msg, "dlq": True}
+        return {"status": "error", "error": error_msg, "dlq": push_to_dlq_on_error}
 
 
 async def score_batch_from_scrape(scrape_id: str) -> dict:
