@@ -57,8 +57,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
     if (q !== null && q !== searchQuery) {
       setSearchQuery(q);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams, setSearchQuery]);
+  }, [searchParams, searchQuery, setSearchQuery]);
 
   // Sync store search query to URL (with debounce)
   useEffect(() => {
