@@ -17,6 +17,10 @@ class Settings(BaseSettings):
     serpapi_key: str | None = None
     gemini_api_key: str
 
+    # Free LLM fallback (Groq) — used when Gemini errors or is over its daily cap
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+
     # Security
     backend_api_key: str = "dev-secret-key-123"
 
