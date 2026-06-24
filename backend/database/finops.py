@@ -6,6 +6,7 @@ Checks daily_api_usage table before any third-party API call.
 Hard blocks at quota with HTTP 429.
 """
 
+import asyncio
 from datetime import date
 import logging
 from typing import Any
@@ -48,9 +49,12 @@ async def check_and_increment_gemini_quota() -> bool:
     """
     db = get_supabase_client()
     try:
-        result = db.rpc(
-            "increment_gemini_calls", {"max_calls": settings.max_gemini_calls_per_day}
-        ).execute()
+        result = await asyncio.to_thread(
+            db.rpc(
+                "increment_gemini_calls",
+                {"max_calls": settings.max_gemini_calls_per_day},
+            ).execute
+        )
 
         if not _rpc_allowed(result.data):
             raise HTTPException(
@@ -71,12 +75,16 @@ async def check_and_increment_gemini_quota() -> bool:
 async def _fallback_check_gemini():
     db = get_supabase_client()
     today = date.today().isoformat()
-    result = db.table("daily_api_usage").select("*").eq("date", today).execute()
+    result = await asyncio.to_thread(
+        db.table("daily_api_usage").select("*").eq("date", today).execute
+    )
 
     if not result.data:
-        db.table("daily_api_usage").insert(
-            {"date": today, "gemini_calls": 1, "scraper_runs": 0}
-        ).execute()
+        await asyncio.to_thread(
+            db.table("daily_api_usage")
+            .insert({"date": today, "gemini_calls": 1, "scraper_runs": 0})
+            .execute
+        )
         return True
 
     current = result.data[0].get("gemini_calls", 0)
@@ -86,9 +94,12 @@ async def _fallback_check_gemini():
             detail=f"Daily Gemini API quota reached ({settings.max_gemini_calls_per_day} calls).",
         )
 
-    db.table("daily_api_usage").update({"gemini_calls": current + 1}).eq(
-        "date", today
-    ).execute()
+    await asyncio.to_thread(
+        db.table("daily_api_usage")
+        .update({"gemini_calls": current + 1})
+        .eq("date", today)
+        .execute
+    )
     return True
 
 
@@ -99,9 +110,12 @@ async def check_and_increment_scraper_quota() -> bool:
     """
     db = get_supabase_client()
     try:
-        result = db.rpc(
-            "increment_scraper_runs", {"max_runs": settings.max_scraper_runs_per_day}
-        ).execute()
+        result = await asyncio.to_thread(
+            db.rpc(
+                "increment_scraper_runs",
+                {"max_runs": settings.max_scraper_runs_per_day},
+            ).execute
+        )
 
         if not _rpc_allowed(result.data):
             raise HTTPException(
@@ -121,12 +135,16 @@ async def check_and_increment_scraper_quota() -> bool:
 async def _fallback_check_scraper():
     db = get_supabase_client()
     today = date.today().isoformat()
-    result = db.table("daily_api_usage").select("*").eq("date", today).execute()
+    result = await asyncio.to_thread(
+        db.table("daily_api_usage").select("*").eq("date", today).execute
+    )
 
     if not result.data:
-        db.table("daily_api_usage").insert(
-            {"date": today, "gemini_calls": 0, "scraper_runs": 1}
-        ).execute()
+        await asyncio.to_thread(
+            db.table("daily_api_usage")
+            .insert({"date": today, "gemini_calls": 0, "scraper_runs": 1})
+            .execute
+        )
         return True
 
     current = result.data[0].get("scraper_runs", 0)
@@ -136,9 +154,12 @@ async def _fallback_check_scraper():
             detail=f"Daily scraper quota reached ({settings.max_scraper_runs_per_day} runs).",
         )
 
-    db.table("daily_api_usage").update({"scraper_runs": current + 1}).eq(
-        "date", today
-    ).execute()
+    await asyncio.to_thread(
+        db.table("daily_api_usage")
+        .update({"scraper_runs": current + 1})
+        .eq("date", today)
+        .execute
+    )
     return True
 
 
@@ -164,7 +185,9 @@ async def get_daily_usage() -> dict:
     db = get_supabase_client()
     today = date.today().isoformat()
 
-    result = db.table("daily_api_usage").select("*").eq("date", today).execute()
+    result = await asyncio.to_thread(
+        db.table("daily_api_usage").select("*").eq("date", today).execute
+    )
 
     if not result.data:
         return {

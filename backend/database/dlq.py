@@ -5,8 +5,12 @@ Source: 01-System-Architecture.md
 Failed scrapes or Gemini timeouts are pushed to dlq_tasks.
 Implements exponential backoff retry logic.
 The pipeline must never crash on a single failed lead.
+
+All Supabase calls are blocking; they are run via asyncio.to_thread so the DLQ
+worker (and the rest of the event loop) is never blocked.
 """
 
+import asyncio
 import math
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -26,18 +30,22 @@ async def push_to_dlq(
     # First retry in 30 seconds (exponential backoff starts here)
     next_retry = datetime.now(timezone.utc) + timedelta(seconds=30)
 
-    db.table("dlq_tasks").insert(
-        {
-            "task_id": task_id,
-            "task_type": task_type,
-            "payload": payload,
-            "error_message": error_message,
-            "retry_count": 0,
-            "max_retries": max_retries,
-            "next_retry_at": next_retry.isoformat(),
-            "status": "pending",
-        }
-    ).execute()
+    await asyncio.to_thread(
+        db.table("dlq_tasks")
+        .insert(
+            {
+                "task_id": task_id,
+                "task_type": task_type,
+                "payload": payload,
+                "error_message": error_message,
+                "retry_count": 0,
+                "max_retries": max_retries,
+                "next_retry_at": next_retry.isoformat(),
+                "status": "pending",
+            }
+        )
+        .execute
+    )
 
     return task_id
 
@@ -47,12 +55,12 @@ async def get_pending_retries() -> list:
     db = get_supabase_client()
     now = datetime.now(timezone.utc).isoformat()
 
-    result = (
+    result = await asyncio.to_thread(
         db.table("dlq_tasks")
         .select("*")
         .eq("status", "pending")
         .lte("next_retry_at", now)
-        .execute()
+        .execute
     )
 
     return result.data or []
@@ -61,17 +69,34 @@ async def get_pending_retries() -> list:
 async def mark_retrying(task_id: str) -> None:
     """Mark a DLQ task as currently being retried."""
     db = get_supabase_client()
-    db.table("dlq_tasks").update({"status": "retrying"}).eq(
-        "task_id", task_id
-    ).execute()
+    await asyncio.to_thread(
+        db.table("dlq_tasks")
+        .update({"status": "retrying"})
+        .eq("task_id", task_id)
+        .execute
+    )
 
 
 async def mark_resolved(task_id: str) -> None:
     """Mark a DLQ task as successfully resolved after retry."""
     db = get_supabase_client()
-    db.table("dlq_tasks").update({"status": "resolved"}).eq(
-        "task_id", task_id
-    ).execute()
+    await asyncio.to_thread(
+        db.table("dlq_tasks")
+        .update({"status": "resolved"})
+        .eq("task_id", task_id)
+        .execute
+    )
+
+
+async def mark_failed_terminal(task_id: str, error_message: str) -> None:
+    """Mark a task as permanently failed (no further retries)."""
+    db = get_supabase_client()
+    await asyncio.to_thread(
+        db.table("dlq_tasks")
+        .update({"status": "failed", "error_message": error_message})
+        .eq("task_id", task_id)
+        .execute
+    )
 
 
 async def mark_failed_retry(task_id: str, error_message: str) -> None:
@@ -82,11 +107,11 @@ async def mark_failed_retry(task_id: str, error_message: str) -> None:
     db = get_supabase_client()
 
     # Get current retry count
-    result = (
+    result = await asyncio.to_thread(
         db.table("dlq_tasks")
         .select("retry_count, max_retries")
         .eq("task_id", task_id)
-        .execute()
+        .execute
     )
 
     if not result.data:
@@ -97,23 +122,33 @@ async def mark_failed_retry(task_id: str, error_message: str) -> None:
 
     if new_count >= task["max_retries"]:
         # Permanently failed — no more retries
-        db.table("dlq_tasks").update(
-            {
-                "status": "failed",
-                "retry_count": new_count,
-                "error_message": error_message,
-            }
-        ).eq("task_id", task_id).execute()
+        await asyncio.to_thread(
+            db.table("dlq_tasks")
+            .update(
+                {
+                    "status": "failed",
+                    "retry_count": new_count,
+                    "error_message": error_message,
+                }
+            )
+            .eq("task_id", task_id)
+            .execute
+        )
     else:
         # Exponential backoff: 30s, 60s, 120s, 240s, 480s...
         delay_seconds = 30 * math.pow(2, new_count)
         next_retry = datetime.now(timezone.utc) + timedelta(seconds=delay_seconds)
 
-        db.table("dlq_tasks").update(
-            {
-                "status": "pending",
-                "retry_count": new_count,
-                "next_retry_at": next_retry.isoformat(),
-                "error_message": error_message,
-            }
-        ).eq("task_id", task_id).execute()
+        await asyncio.to_thread(
+            db.table("dlq_tasks")
+            .update(
+                {
+                    "status": "pending",
+                    "retry_count": new_count,
+                    "next_retry_at": next_retry.isoformat(),
+                    "error_message": error_message,
+                }
+            )
+            .eq("task_id", task_id)
+            .execute
+        )

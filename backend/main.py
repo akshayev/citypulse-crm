@@ -28,6 +28,7 @@ from backend.database.dlq import (
     mark_retrying,
     mark_resolved,
     mark_failed_retry,
+    mark_failed_terminal,
 )
 from fastapi import Header, Depends
 
@@ -59,24 +60,50 @@ async def dlq_retry_worker():
                 await mark_retrying(task_id)
 
                 try:
+                    # Retries must NOT re-enqueue: pass push_to_dlq_on_error=False
+                    # so the handler doesn't create a duplicate DLQ row. The
+                    # worker is the single owner of retry bookkeeping below.
                     if task_type == "scrape":
-                        result = await scrape_google_maps(**payload)
+                        result = await scrape_google_maps(
+                            **payload, push_to_dlq_on_error=False
+                        )
                     elif task_type == "clean":
-                        result = await clean_raw_scrape(payload["scrape_id"])
+                        result = await clean_raw_scrape(
+                            payload["scrape_id"], push_to_dlq_on_error=False
+                        )
                     elif task_type == "score":
-                        result = await score_single_lead(payload["place_id"])
+                        result = await score_single_lead(
+                            payload["place_id"], push_to_dlq_on_error=False
+                        )
                     else:
-                        raise ValueError(f"Unknown task type: {task_type}")
+                        await mark_failed_terminal(
+                            task_id, f"Unknown task type: {task_type}"
+                        )
+                        continue
 
-                    if result.get("status") == "success":
+                    status = result.get("status")
+                    if status == "success":
                         await mark_resolved(task_id)
                         logger.info(f"DLQ resolved: {task_id}")
+                    elif status == "quota_exceeded":
+                        # Terminal: retrying won't help until the daily quota
+                        # resets; a fresh run should be triggered instead.
+                        await mark_failed_terminal(
+                            task_id, result.get("error", "quota exceeded")
+                        )
+                        logger.warning(f"DLQ terminal (quota): {task_id}")
                     else:
-                        raise Exception(result.get("error", "Unknown error"))
+                        await mark_failed_retry(
+                            task_id, result.get("error", "Unknown error")
+                        )
+                        logger.warning(
+                            f"DLQ retry failed: {task_id} — {result.get('error')}"
+                        )
 
                 except Exception as e:
+                    # Handler raised unexpectedly — reschedule with backoff.
                     await mark_failed_retry(task_id, str(e))
-                    logger.warning(f"DLQ retry failed: {task_id} — {e}")
+                    logger.warning(f"DLQ retry crashed: {task_id} — {e}")
 
         except Exception as e:
             logger.error(f"DLQ worker error: {e}")

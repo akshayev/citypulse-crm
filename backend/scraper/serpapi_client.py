@@ -27,13 +27,20 @@ logger = logging.getLogger(__name__)
 
 
 async def scrape_google_maps(
-    city: str, niche: str, created_by: str | None = None
+    city: str,
+    niche: str,
+    created_by: str | None = None,
+    *,
+    push_to_dlq_on_error: bool = True,
 ) -> dict:
     """
     Scrape Google Maps for businesses matching city + niche.
     Primary: SerpApi (Paid/Credits)
     Fallback: Selenium (Free/Headless)
     Stores raw JSON in the Bronze layer (raw_scrapes table).
+
+    push_to_dlq_on_error: True on the first attempt; the DLQ worker passes False
+    on retries so it does not create duplicate DLQ rows.
     """
     query = f"{niche} in {city}"
 
@@ -79,13 +86,14 @@ async def scrape_google_maps(
         error_msg = f"Scraping failed (both SerpApi and Selenium) for '{city}/{niche}': {str(e)}"
         logger.error(error_msg)
 
-        await push_to_dlq(
-            task_type="scrape",
-            payload={"city": city, "niche": niche, "created_by": created_by},
-            error_message=error_msg,
-        )
+        if push_to_dlq_on_error:
+            await push_to_dlq(
+                task_type="scrape",
+                payload={"city": city, "niche": niche, "created_by": created_by},
+                error_message=error_msg,
+            )
 
-        return {"status": "error", "error": error_msg, "dlq": True}
+        return {"status": "error", "error": error_msg, "dlq": push_to_dlq_on_error}
 
 
 async def scrape_google_maps_selenium(city: str, niche: str) -> dict:
