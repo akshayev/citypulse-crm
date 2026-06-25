@@ -65,10 +65,9 @@ export default function SignupPage() {
     }
 
     if (!signupData.session) {
-      setServerError(
-        "Account created. Please confirm your email, then sign in."
-      );
-      setIsLoading(false);
+      // Email confirmation required — send them to login where the conditional
+      // confirm banner (and resend option) lives.
+      router.push("/login?confirm=1");
       return;
     }
 

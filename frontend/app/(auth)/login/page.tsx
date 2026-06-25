@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { useForm } from "react-hook-form";
@@ -23,6 +23,11 @@ export default function LoginPage() {
   const router = useRouter();
   const [serverError, setServerError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  // Show the "confirm your email" hint only when relevant (arrived from signup
+  // or hit an unconfirmed-email error) — not on every visit.
+  const [showConfirmHint, setShowConfirmHint] = useState(false);
+  const [unconfirmedEmail, setUnconfirmedEmail] = useState<string | null>(null);
+  const [resendMsg, setResendMsg] = useState<string | null>(null);
 
   const {
     register,
@@ -32,9 +37,21 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   });
 
+  useEffect(() => {
+    // Read the query param client-side to avoid a useSearchParams Suspense
+    // boundary on this statically-rendered page. Deferred via a timer so the
+    // setState isn't synchronous in the effect (react-hooks/set-state-in-effect).
+    const wantsConfirm =
+      new URLSearchParams(window.location.search).get("confirm") === "1";
+    if (!wantsConfirm) return;
+    const id = setTimeout(() => setShowConfirmHint(true), 0);
+    return () => clearTimeout(id);
+  }, []);
+
   async function onSubmit(data: LoginFormData) {
     setIsLoading(true);
     setServerError(null);
+    setResendMsg(null);
 
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithPassword({
@@ -44,12 +61,32 @@ export default function LoginPage() {
 
     if (error) {
       setServerError(error.message);
+      // Supabase returns "Email not confirmed" — offer a resend in that case.
+      if (/confirm/i.test(error.message)) {
+        setUnconfirmedEmail(data.email);
+        setShowConfirmHint(true);
+      }
       setIsLoading(false);
       return;
     }
 
     router.push("/dashboard");
     router.refresh();
+  }
+
+  async function handleResend() {
+    if (!unconfirmedEmail) return;
+    setResendMsg(null);
+    const supabase = createClient();
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: unconfirmedEmail,
+    });
+    setResendMsg(
+      error
+        ? `Could not resend: ${error.message}`
+        : "Confirmation email sent — check your inbox."
+    );
   }
 
   return (
@@ -80,9 +117,21 @@ export default function LoginPage() {
 
         {/* Form */}
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
-          <div className="p-3 rounded-lg bg-info/10 border border-info/20 text-info text-sm">
-            If you just signed up, confirm your email first, then sign in.
-          </div>
+          {showConfirmHint && (
+            <div className="p-3 rounded-lg bg-info/10 border border-info/20 text-info text-sm space-y-2">
+              <p>Confirm your email first, then sign in.</p>
+              {unconfirmedEmail && (
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  className="underline hover:no-underline font-medium"
+                >
+                  Resend confirmation email
+                </button>
+              )}
+              {resendMsg && <p className="text-text-secondary">{resendMsg}</p>}
+            </div>
+          )}
 
           {serverError && (
             <div className="p-3 rounded-lg bg-danger/10 border border-danger/20 text-danger text-sm">
@@ -113,12 +162,20 @@ export default function LoginPage() {
 
           {/* Password Field */}
           <div>
-            <label
-              htmlFor="login-password"
-              className="block text-sm font-medium text-text-secondary mb-1.5"
-            >
-              Password
-            </label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label
+                htmlFor="login-password"
+                className="block text-sm font-medium text-text-secondary"
+              >
+                Password
+              </label>
+              <Link
+                href="/forgot-password"
+                className="text-xs text-accent hover:text-accent-light transition-colors"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <input
               id="login-password"
               type="password"
