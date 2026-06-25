@@ -239,6 +239,19 @@ CREATE TABLE saved_filters (
 CREATE INDEX idx_saved_filters_user ON saved_filters (user_id, created_at DESC);
 
 -- ==============================================================================
+-- merge_lead_tags (F2 — non-clobbering tag union for auto-tagging scrapes)
+-- Backend-only: EXECUTE revoked from anon/authenticated, granted to service_role.
+-- ==============================================================================
+CREATE OR REPLACE FUNCTION merge_lead_tags(p_place_ids text[], p_tags text[])
+RETURNS void LANGUAGE sql AS $$
+  UPDATE crm_leads
+  SET tags = (SELECT array(SELECT DISTINCT unnest(coalesce(tags, '{}') || p_tags)))
+  WHERE place_id = ANY(p_place_ids);
+$$;
+REVOKE ALL ON FUNCTION merge_lead_tags(text[], text[]) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION merge_lead_tags(text[], text[]) TO service_role;
+
+-- ==============================================================================
 -- ENABLE REALTIME (Kanban multi-user sync + live job status)
 -- ==============================================================================
 ALTER PUBLICATION supabase_realtime ADD TABLE crm_leads;
