@@ -26,11 +26,19 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
+    // suppressHydrationWarning: browser extensions (e.g. webcrx, Grammarly)
+    // inject attributes onto <html>/<body> before React hydrates, which would
+    // otherwise log a hydration mismatch. This only ignores attribute diffs on
+    // these two elements — real mismatches deeper in the tree still surface.
     <html
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col">
+      <body
+        className="min-h-full flex flex-col"
+        suppressHydrationWarning
+      >
         <QueryProvider>{children}</QueryProvider>
         <Toaster theme="dark" position="bottom-right" />
       </body>
