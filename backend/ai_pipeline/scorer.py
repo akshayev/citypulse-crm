@@ -37,6 +37,28 @@ Scoring Criteria:
 Output format MUST be strictly JSON: {"heat_score": 85, "reasoning": "No website found, high review volume indicates active business but poor digital footprint."}"""
 
 
+def _heat_tier(score: int) -> str:
+    """Bucket a heat score into a tier tag (mirrors frontend getHeatScoreClass)."""
+    if score >= 70:
+        return "hot"
+    if score >= 40:
+        return "warm"
+    return "cold"
+
+
+def _lead_auto_tags(shop: dict, heat_score: int) -> list[str]:
+    """Auto-tags for a scraped lead: niche + city + heat tier (normalised)."""
+    tags: list[str] = []
+    niche = (shop.get("niche") or "").strip().lower()
+    city = (shop.get("city") or "").strip().lower()
+    if niche:
+        tags.append(niche)
+    if city:
+        tags.append(city)
+    tags.append(_heat_tier(heat_score))
+    return tags
+
+
 def _build_business_context(shop: dict) -> str:
     """Build a context string from Silver layer shop data for Gemini evaluation."""
     parts = [f"Business Name: {shop.get('shop_name', 'Unknown')}"]
@@ -240,6 +262,21 @@ async def score_single_lead(
         await asyncio.to_thread(
             db.table("crm_leads").upsert(lead_data, on_conflict="place_id").execute
         )
+
+        # Auto-tag (best-effort) with niche + city + heat tier so the lead is
+        # immediately filterable. Non-clobbering union RPC preserves user tags;
+        # a tagging failure must not fail an already-scored lead.
+        try:
+            tags = _lead_auto_tags(shop, heat_score)
+            if tags:
+                await asyncio.to_thread(
+                    db.rpc(
+                        "merge_lead_tags",
+                        {"p_place_ids": [place_id], "p_tags": tags},
+                    ).execute
+                )
+        except Exception as tag_err:  # noqa: BLE001
+            logger.warning(f"Auto-tagging failed for {place_id}: {tag_err}")
 
         logger.info(
             f"Gold layer: Scored {shop['shop_name']} → Heat Score: {heat_score}"
