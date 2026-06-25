@@ -24,11 +24,40 @@ Rules:
 
 import { getRouteUser, unauthorized } from "@/lib/auth/require-user";
 
+// Best-effort per-user burst limiter. This lives in-memory per warm isolate, so
+// it is NOT a distributed guarantee — the durable, cross-instance cap is the
+// per-user daily Gemini quota RPC below. Its job is to throttle rapid repeated
+// clicks on "Generate pitch" from a single user within an isolate.
+const PITCH_WINDOW_MS = 60_000;
+const PITCH_MAX_PER_WINDOW = 10;
+const pitchHits = new Map<string, number[]>();
+
+function isRateLimited(userId: string): boolean {
+  const now = Date.now();
+  const recent = (pitchHits.get(userId) || []).filter(
+    (t) => now - t < PITCH_WINDOW_MS
+  );
+  if (recent.length >= PITCH_MAX_PER_WINDOW) {
+    pitchHits.set(userId, recent);
+    return true;
+  }
+  recent.push(now);
+  pitchHits.set(userId, recent);
+  return false;
+}
+
 export async function POST(request: Request) {
   try {
     // Gate: only authenticated users may generate pitches (burns LLM budget).
     const { user, supabase } = await getRouteUser();
     if (!user) return unauthorized();
+
+    if (isRateLimited(user.id)) {
+      return new Response(
+        JSON.stringify({ error: "Too many requests. Please slow down." }),
+        { status: 429, headers: { "Content-Type": "application/json" } }
+      );
+    }
 
     const { shopName, reasoning, city, heatScore } = await request.json();
 
