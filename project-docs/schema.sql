@@ -181,6 +181,11 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
     bronze_count  INTEGER DEFAULT 0,
     silver_count  INTEGER DEFAULT 0,
     gold_count    INTEGER DEFAULT 0,
+    blocked_count INTEGER DEFAULT 0,           -- DNC-blocked at Silver
+    dq_failed     INTEGER DEFAULT 0,           -- data-quality rejects at Silver
+    gemini_calls  INTEGER DEFAULT 0,
+    groq_calls    INTEGER DEFAULT 0,
+    llm_cost_usd  NUMERIC(12,6) DEFAULT 0,
     error         TEXT,
     created_by    UUID REFERENCES auth.users(id),
     started_at    TIMESTAMPTZ DEFAULT NOW(),
