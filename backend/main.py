@@ -21,7 +21,10 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.util import get_remote_address
 
+import sentry_sdk
+
 from backend.config import settings
+from backend.observability import init_sentry, configure_logging
 from backend.database.supabase_client import get_supabase_client
 from backend.scraper.serpapi_client import scrape_google_maps
 from backend.ai_pipeline.cleaner import clean_raw_scrape
@@ -168,6 +171,10 @@ async def dlq_retry_worker():
 async def lifespan(app: FastAPI):
     """App lifespan — starts the DLQ retry worker."""
     global _dlq_last_beat
+    # Observability: enable Sentry + JSON logging if configured (both no-op
+    # otherwise).
+    configure_logging()
+    init_sentry()
     # Seed the heartbeat so readiness is healthy immediately at startup, before
     # the worker's first loop iteration runs.
     _dlq_last_beat = time.monotonic()
@@ -484,6 +491,12 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
 
     except Exception as e:
         logger.error(f"Pipeline crashed (run_id: {run_id}): {e}")
+        # Report to Sentry (no-op if unconfigured) with run context so the
+        # failing pipeline is distinguishable from request-path errors.
+        with sentry_sdk.new_scope() as scope:
+            scope.set_tag("component", "pipeline")
+            scope.set_tag("run_id", run_id or "unknown")
+            sentry_sdk.capture_exception(e)
         await update_run(
             run_id, status="failed", error=str(e)[:500], finished_at=_now()
         )
