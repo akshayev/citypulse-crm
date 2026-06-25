@@ -8,6 +8,7 @@ import { ScrapeForm } from "@/components/forms/scrape-form";
 import { ActiveJobs } from "@/components/jobs/active-jobs";
 import { LeadDetailsModal } from "@/components/kanban/lead-details-modal";
 import { BulkToolbar } from "@/components/kanban/bulk-toolbar";
+import { ExportButton } from "@/components/kanban/export-button";
 import { useKanbanStore } from "@/store/kanban-store";
 import { Plus } from "lucide-react";
 
@@ -31,13 +32,16 @@ export default function DashboardPage() {
           </p>
         </div>
 
-        <button
-          onClick={openScrapeModal}
-          className="btn-primary flex items-center gap-2 text-sm"
-        >
-          <Plus className="w-4 h-4" />
-          New Scrape
-        </button>
+        <div className="flex items-center gap-2">
+          <ExportButton />
+          <button
+            onClick={openScrapeModal}
+            className="btn-primary flex items-center gap-2 text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            New Scrape
+          </button>
+        </div>
       </div>
 
       {/* Live scrape job status */}
