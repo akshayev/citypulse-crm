@@ -6,9 +6,11 @@ import { useKanbanStore } from "@/store/kanban-store";
 import { X, MapPin, Phone, Globe, Star, Clock, Flame, Calendar } from "lucide-react";
 import { format } from "date-fns";
 import { formatPhone } from "@/lib/utils";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 
 export function LeadDetailsModal() {
   const { leadDetailId, closeLeadDetail } = useKanbanStore();
+  const dialogRef = useModalA11y<HTMLDivElement>(!!leadDetailId, closeLeadDetail);
 
   const { data: lead, isLoading } = useQuery({
     queryKey: ["lead-details", leadDetailId],
@@ -35,10 +37,22 @@ export function LeadDetailsModal() {
   const shop = lead?.cleaned_shops;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
-      <div className="glass-card w-full max-w-2xl p-6 flex flex-col max-h-[95vh] my-auto relative">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto"
+      onClick={closeLeadDetail}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Lead details"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="glass-card w-full max-w-2xl p-6 flex flex-col max-h-[95vh] my-auto relative outline-none"
+      >
         <button
           onClick={closeLeadDetail}
+          aria-label="Close"
           className="absolute top-4 right-4 p-1.5 rounded-lg hover:bg-glass-hover transition-colors"
         >
           <X className="w-5 h-5 text-text-muted hover:text-text-primary" />

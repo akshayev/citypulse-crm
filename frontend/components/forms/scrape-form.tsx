@@ -7,6 +7,8 @@ import { z } from "zod";
 import { X, Search, Loader2 } from "lucide-react";
 import { useKanbanStore } from "@/store/kanban-store";
 import { useQueryClient } from "@tanstack/react-query";
+import { useCallback } from "react";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 
 /**
  * Scraper Trigger Form — Zod-validated admin form
@@ -56,6 +58,14 @@ export function ScrapeForm() {
     resolver: zodResolver(scrapeSchema),
   });
 
+  const handleClose = useCallback(() => {
+    closeScrapeModal();
+    reset();
+    setResult(null);
+  }, [closeScrapeModal, reset]);
+
+  const dialogRef = useModalA11y<HTMLDivElement>(scrapeModalOpen, handleClose);
+
   async function onSubmit(data: ScrapeFormData) {
     setIsLoading(true);
     setResult(null);
@@ -97,8 +107,19 @@ export function ScrapeForm() {
   if (!scrapeModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in">
-      <div className="glass-card w-full max-w-md p-6">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in"
+      onClick={handleClose}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Trigger scrape"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="glass-card w-full max-w-md p-6 outline-none"
+      >
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
@@ -108,11 +129,8 @@ export function ScrapeForm() {
             </h2>
           </div>
           <button
-            onClick={() => {
-              closeScrapeModal();
-              reset();
-              setResult(null);
-            }}
+            onClick={handleClose}
+            aria-label="Close"
             className="p-1.5 rounded-lg hover:bg-glass-hover transition-colors"
           >
             <X className="w-4 h-4 text-text-muted" />

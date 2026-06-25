@@ -6,6 +6,7 @@ import { useKanbanStore } from "@/store/kanban-store";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 
 /**
  * AI Pitch Generator — SSE Streaming Typewriter Effect
@@ -21,6 +22,7 @@ export function PitchGenerator() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useModalA11y<HTMLDivElement>(pitchModalOpen, closePitchModal);
 
   // Fetch lead details for the pitch
   const { data: lead } = useQuery({
@@ -115,8 +117,19 @@ export function PitchGenerator() {
   if (!pitchModalOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto">
-      <div className="glass-card w-full max-w-lg p-6 max-h-[95vh] flex flex-col my-auto">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto"
+      onClick={closePitchModal}
+    >
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="AI pitch generator"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+        className="glass-card w-full max-w-lg p-6 max-h-[95vh] flex flex-col my-auto outline-none"
+      >
         {/* Header */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
@@ -127,6 +140,7 @@ export function PitchGenerator() {
           </div>
           <button
             onClick={closePitchModal}
+            aria-label="Close"
             className="p-1.5 rounded-lg hover:bg-glass-hover transition-colors"
           >
             <X className="w-4 h-4 text-text-muted" />
