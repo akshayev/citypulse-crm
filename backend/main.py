@@ -9,13 +9,20 @@ Runs the full Bronze → Silver → Gold pipeline.
 
 import asyncio
 import logging
+import time
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.middleware.base import BaseHTTPMiddleware
 from pydantic import BaseModel, Field
 from enum import Enum
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 from backend.config import settings
+from backend.database.supabase_client import get_supabase_client
 from backend.scraper.serpapi_client import scrape_google_maps
 from backend.ai_pipeline.cleaner import clean_raw_scrape
 from backend.ai_pipeline.scorer import score_batch_from_scrape, score_single_lead
@@ -48,6 +55,34 @@ _SCRAPE_TIMEOUT = 180  # seconds
 _CLEAN_TIMEOUT = 180
 _SCORE_TIMEOUT = 900  # batch scoring can be large (parallel chunks)
 
+# Max input length for free-text fields (niche is already enum-bounded).
+_MAX_CITY_LENGTH = 120
+
+# Liveness signal for the DLQ worker — refreshed each loop; read by the
+# readiness probe to detect a stalled or crashed worker (monotonic clock).
+_dlq_last_beat: float | None = None
+
+# Rate limiting (slowapi). Limits are read from settings at request time via
+# callables so they can be tuned per environment (and overridden in tests).
+#
+# Scope note: this backend is called server-to-server by the Next.js proxy
+# (with X-API-Key), so get_remote_address sees a single upstream egress IP.
+# These limits are therefore a GLOBAL best-effort burst cap across all users
+# (in-memory, per-process) — not a per-end-user throttle. That is intentional
+# for a single-tenant showcase: it shields the shared SerpApi/LLM budget from
+# bursts without a Redis/distributed store. X-Forwarded-For is deliberately NOT
+# trusted (it would be trivially spoofable); the durable budget guards are the
+# daily FinOps quotas (which are themselves global daily caps).
+limiter = Limiter(key_func=get_remote_address)
+
+
+def _scrape_rate_limit() -> str:
+    return settings.scrape_rate_limit
+
+
+def _score_rate_limit() -> str:
+    return settings.score_rate_limit
+
 
 # ============================================================================
 # LIFESPAN: Background DLQ retry worker
@@ -56,10 +91,17 @@ _SCORE_TIMEOUT = 900  # batch scoring can be large (parallel chunks)
 
 async def dlq_retry_worker():
     """Background worker that retries failed DLQ tasks with exponential backoff."""
+    global _dlq_last_beat
     while True:
+        # Heartbeat each loop AND before each task so a busy worker grinding a
+        # large backlog still signals liveness; the readiness probe only trips
+        # 'not_ready' if a single task hangs (or the worker crashes) past the
+        # staleness window — not merely because an iteration takes a while.
+        _dlq_last_beat = time.monotonic()
         try:
             pending = await get_pending_retries()
             for task in pending:
+                _dlq_last_beat = time.monotonic()
                 task_id = task["task_id"]
                 task_type = task["task_type"]
                 payload = task["payload"]
@@ -125,6 +167,10 @@ async def dlq_retry_worker():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """App lifespan — starts the DLQ retry worker."""
+    global _dlq_last_beat
+    # Seed the heartbeat so readiness is healthy immediately at startup, before
+    # the worker's first loop iteration runs.
+    _dlq_last_beat = time.monotonic()
     task = asyncio.create_task(dlq_retry_worker())
     logger.info("🚀 CityPulse Backend started. DLQ worker running.")
     yield
@@ -154,6 +200,39 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Rate limiting: register the limiter and the 429 handler so the per-route
+# @limiter.limit(...) decorators take effect (slowapi reads app.state.limiter).
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+
+async def limit_body_size(request: Request, call_next):
+    """Best-effort guard that sheds oversized request bodies with 413.
+
+    Inspects Content-Length only, so it does NOT cover chunked/streaming bodies
+    that omit the header — acceptable here because our only caller is the JSON
+    proxy, which always sends a Content-Length (and Pydantic max_length bounds
+    the parsed size regardless). It still runs before routing/auth so honestly
+    oversized payloads are rejected before allocating memory or burning quota.
+    """
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            if int(content_length) > settings.max_request_bytes:
+                return JSONResponse(
+                    status_code=413,
+                    content={"detail": "Request body too large"},
+                )
+        except ValueError:
+            pass  # malformed header — let downstream parsing reject it
+    return await call_next(request)
+
+
+# Registered BEFORE CORS so CORS ends up the OUTERMOST middleware (Starlette
+# runs the last-added middleware first). This way even a short-circuited 413
+# response still flows back through CORS and carries the right headers.
+app.add_middleware(BaseHTTPMiddleware, dispatch=limit_body_size)
 
 # CORS — allow Next.js frontend (CORS is not a security boundary; backend
 # auth relies on the X-API-Key header checked in verify_api_key).
@@ -192,7 +271,12 @@ class NicheEnum(str, Enum):
 
 
 class ScrapeRequest(BaseModel):
-    city: str = Field(..., min_length=1, description="Target city for scraping")
+    city: str = Field(
+        ...,
+        min_length=1,
+        max_length=_MAX_CITY_LENGTH,
+        description="Target city for scraping",
+    )
     niche: NicheEnum = Field(..., description="Business niche to search")
 
 
@@ -224,8 +308,40 @@ async def verify_api_key(x_api_key: str = Header(None)):
 
 @app.get("/api/health")
 async def health_check():
-    """Health check endpoint."""
+    """Liveness probe — process is up and serving (no external dependencies)."""
     return {"status": "healthy", "service": "citypulse-crm-backend"}
+
+
+async def _db_ping() -> None:
+    """Cheap round-trip to confirm the database is reachable."""
+    db = get_supabase_client()
+    await asyncio.to_thread(db.table("pipeline_runs").select("id").limit(1).execute)
+
+
+@app.get("/api/health/ready")
+async def readiness_check():
+    """Readiness probe — only 'ready' when dependencies are healthy.
+
+    Checks DB reachability and that the DLQ worker has beaten recently. Returns
+    503 (so orchestrators stop routing traffic) when any check fails.
+    """
+    checks = {"db": False, "dlq_worker": False}
+
+    try:
+        await _db_ping()
+        checks["db"] = True
+    except Exception as e:  # noqa: BLE001 — readiness must never raise
+        logger.warning(f"Readiness DB check failed: {e}")
+
+    if _dlq_last_beat is not None:
+        age = time.monotonic() - _dlq_last_beat
+        checks["dlq_worker"] = age < settings.dlq_heartbeat_max_age_seconds
+
+    ready = all(checks.values())
+    return JSONResponse(
+        status_code=200 if ready else 503,
+        content={"status": "ready" if ready else "not_ready", "checks": checks},
+    )
 
 
 @app.get("/api/usage", dependencies=[Depends(verify_api_key)])
@@ -250,29 +366,34 @@ async def dlq_status():
 @app.post(
     "/api/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key)]
 )
-async def trigger_scrape(request: ScrapeRequest, background_tasks: BackgroundTasks):
+@limiter.limit(_scrape_rate_limit)
+async def trigger_scrape(
+    request: Request, body: ScrapeRequest, background_tasks: BackgroundTasks
+):
     """
     Trigger a full scraping pipeline: Bronze → Silver → Gold.
     Runs in the background via FastAPI without freezing the UI.
     Source: 01-System-Architecture.md
+
+    (slowapi requires the `request: Request` parameter to key the rate limit.)
     """
     # Atomically check and increment scraper quota
     await check_and_increment_scraper_quota()
 
     # Create a run row so the UI can show live job status, then launch the
     # pipeline in the background.
-    run_id = await create_run(request.city, request.niche.value)
+    run_id = await create_run(body.city, body.niche.value)
     background_tasks.add_task(
         _run_full_pipeline,
-        city=request.city,
-        niche=request.niche.value,
+        city=body.city,
+        niche=body.niche.value,
         run_id=run_id,
     )
 
     return ScrapeResponse(
         status="accepted",
         run_id=run_id,
-        message=f"Scraping pipeline started for '{request.niche.value}' in '{request.city}'. "
+        message=f"Scraping pipeline started for '{body.niche.value}' in '{body.city}'. "
         f"Track progress in the Active Jobs panel; results appear on the board live.",
     )
 
@@ -373,7 +494,8 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
 
 
 @app.post("/api/score/{place_id}", dependencies=[Depends(verify_api_key)])
-async def score_lead(place_id: str):
+@limiter.limit(_score_rate_limit)
+async def score_lead(request: Request, place_id: str):
     """Score a single lead manually."""
     # check_and_increment_gemini_quota is called internally by score_single_lead
     result = await score_single_lead(place_id)

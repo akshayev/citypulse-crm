@@ -35,3 +35,6 @@ npm-debug.log*
 
 # Type generation
 .next/types/
+
+# Local Claude Code session state (plans, scheduler locks) — not project code
+.claude/

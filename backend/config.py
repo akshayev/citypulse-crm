@@ -41,6 +41,14 @@ class Settings(BaseSettings):
     max_gemini_calls_per_day: int = 50
     max_scraper_runs_per_day: int = 20
 
+    # API hardening (B2): per-route rate limits (slowapi syntax), request body
+    # cap, and the staleness window after which the DLQ worker is considered
+    # unhealthy for the readiness probe.
+    scrape_rate_limit: str = "10/minute"
+    score_rate_limit: str = "20/minute"
+    max_request_bytes: int = 65536  # 64 KB — generous for our small JSON bodies
+    dlq_heartbeat_max_age_seconds: int = 180  # 3x the 60s worker loop interval
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]
