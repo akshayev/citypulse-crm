@@ -49,6 +49,16 @@ class Settings(BaseSettings):
     max_request_bytes: int = 65536  # 64 KB — generous for our small JSON bodies
     dlq_heartbeat_max_age_seconds: int = 180  # 3x the 60s worker loop interval
 
+    # Error tracking (B3): Sentry stays disabled unless a DSN is provided, so
+    # local/dev/CI runs never phone home. traces_sample_rate is kept low to stay
+    # within free-tier transaction budgets.
+    sentry_dsn: str | None = None
+    sentry_traces_sample_rate: float = 0.1
+
+    # Structured JSON logging — on by default in production for log aggregation,
+    # off in development for human-readable console logs.
+    log_json: bool = False
+
     @property
     def cors_origin_list(self) -> List[str]:
         return [origin.strip() for origin in self.cors_origins.split(",")]

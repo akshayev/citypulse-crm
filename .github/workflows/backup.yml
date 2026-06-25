@@ -1,0 +1,53 @@
+name: Database Backup
+
+# Daily logical backup of the Supabase Postgres via pg_dump, uploaded as an
+# artifact. Secondary to Supabase PITR (see project-docs/RUNBOOK.md).
+#
+# Requires repo secret SUPABASE_DB_URL (session-pooler connection string).
+# Skips cleanly when the secret is absent so forks don't fail.
+
+on:
+  schedule:
+    - cron: "0 2 * * *" # 02:00 UTC daily
+  workflow_dispatch: {} # allow manual runs
+
+jobs:
+  pg_dump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for DB secret
+        id: guard
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          if [ -z "$SUPABASE_DB_URL" ]; then
+            echo "SUPABASE_DB_URL not set — skipping backup."
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install latest postgresql-client (must be >= the server version)
+        if: steps.guard.outputs.enabled == 'true'
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo gpg --dearmor -o /etc/apt/trusted.gpg.d/pgdg.gpg
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+
+      - name: Run pg_dump
+        if: steps.guard.outputs.enabled == 'true'
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+          pg_dump --format=custom --no-owner --no-privileges \
+            --file="citypulse-${STAMP}.dump" "$SUPABASE_DB_URL"
+          echo "BACKUP_FILE=citypulse-${STAMP}.dump" >> "$GITHUB_ENV"
+
+      - name: Upload backup artifact
+        if: steps.guard.outputs.enabled == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.BACKUP_FILE }}
+          path: ${{ env.BACKUP_FILE }}
+          retention-days: 14
