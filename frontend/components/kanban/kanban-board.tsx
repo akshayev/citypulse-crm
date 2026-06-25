@@ -72,6 +72,7 @@ export function KanbanBoard() {
     openScrapeModal,
     filterHeatMin,
     filterTags,
+    sortMode,
   } = useKanbanStore();
 
   // Configure sensors with touch support (spec: 06)
@@ -84,22 +85,30 @@ export function KanbanBoard() {
   // Pagination state
   const [limit, setLimit] = useState(50);
 
-  // Fetch all leads (paginated globally)
+  // Fetch all leads (paginated globally), ordered per the chosen sort mode.
   const { data: leads = [], isLoading } = useQuery<Lead[]>({
-    queryKey: ["leads", limit],
+    queryKey: ["leads", limit, sortMode],
     queryFn: async () => {
       const supabase = createClient();
-      const { data, error } = await supabase
-        .from("crm_leads")
-        .select(`
+      let query = supabase.from("crm_leads").select(`
           *,
           cleaned_shops (
             shop_name, phone, website, address, city, rating, review_count
           )
-        `)
-        .order("column_order", { ascending: true })
-        .limit(limit);
+        `);
 
+      // FIFO = oldest first; Newest = newest first; Hottest = highest score first.
+      if (sortMode === "hottest") {
+        query = query
+          .order("heat_score", { ascending: false })
+          .order("created_at", { ascending: true });
+      } else {
+        query = query.order("created_at", {
+          ascending: sortMode === "fifo",
+        });
+      }
+
+      const { data, error } = await query.limit(limit);
       if (error) throw error;
       return data as Lead[];
     },
@@ -141,9 +150,10 @@ export function KanbanBoard() {
     // Optimistic UI: snap card instantly, rollback on error
     onMutate: async ({ leadId, newStatus }) => {
       await queryClient.cancelQueries({ queryKey: ["leads"] });
-      const previous = queryClient.getQueryData<Lead[]>(["leads", limit]);
+      const key = ["leads", limit, sortMode];
+      const previous = queryClient.getQueryData<Lead[]>(key);
 
-      queryClient.setQueryData<Lead[]>(["leads", limit], (old) =>
+      queryClient.setQueryData<Lead[]>(key, (old) =>
         old?.map((lead) =>
           lead.id === leadId
             ? { ...lead, status: newStatus as Lead["status"] }
@@ -156,7 +166,7 @@ export function KanbanBoard() {
     onError: (_err, _vars, context) => {
       toast.error("Failed to move lead.");
       if (context?.previous) {
-        queryClient.setQueryData(["leads", limit], context.previous);
+        queryClient.setQueryData(["leads", limit, sortMode], context.previous);
       }
     },
     onSettled: () => {

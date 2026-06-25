@@ -41,6 +41,10 @@ interface KanbanStore {
   searchQuery: string;
   setSearchQuery: (query: string) => void;
 
+  // Lead ordering
+  sortMode: "fifo" | "newest" | "hottest";
+  setSortMode: (mode: "fifo" | "newest" | "hottest") => void;
+
   // Advanced filters (D4)
   filterHeatMin: number; // 0 = no minimum
   filterTags: string[]; // empty = all; match leads having ANY of these
@@ -89,6 +93,10 @@ export const useKanbanStore = create<KanbanStore>((set) => ({
   // Search
   searchQuery: "",
   setSearchQuery: (query) => set({ searchQuery: query }),
+
+  // Ordering — FIFO (oldest first) by default
+  sortMode: "fifo",
+  setSortMode: (mode) => set({ sortMode: mode }),
 
   // Advanced filters
   filterHeatMin: 0,
