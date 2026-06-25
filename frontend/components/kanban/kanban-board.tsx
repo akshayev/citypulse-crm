@@ -16,6 +16,7 @@ import {
 import { sortableKeyboardCoordinates } from "@dnd-kit/sortable";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
+import { Flame, Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { useKanbanStore } from "@/store/kanban-store";
 import { KanbanColumn } from "./kanban-column";
@@ -63,7 +64,8 @@ const COLUMNS = [
  */
 export function KanbanBoard() {
   const queryClient = useQueryClient();
-  const { activeDragId, setActiveDragId, searchQuery } = useKanbanStore();
+  const { activeDragId, setActiveDragId, searchQuery, openScrapeModal } =
+    useKanbanStore();
 
   // Configure sensors with touch support (spec: 06)
   const sensors = useSensors(
@@ -246,6 +248,37 @@ export function KanbanBoard() {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="spinner w-8 h-8" />
+      </div>
+    );
+  }
+
+  // First-run onboarding: no leads in the pipeline yet.
+  if (!isLoading && leads.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full text-center px-6 animate-fade-in">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-accent to-accent-light flex items-center justify-center mb-5">
+          <Flame className="w-7 h-7 text-white" />
+        </div>
+        <h2 className="text-lg font-bold text-text-primary">
+          Your pipeline is empty — let&apos;s find some leads
+        </h2>
+        <p className="text-sm text-text-secondary mt-2 max-w-md">
+          Run a scrape for a city and niche. CityPulse pulls local businesses,
+          cleans them, and AI-scores each one so the hottest leads land in{" "}
+          <span className="text-text-primary font-medium">New Leads</span>{" "}
+          ready to work.
+        </p>
+        <button
+          onClick={openScrapeModal}
+          className="btn-primary flex items-center gap-2 text-sm mt-6"
+        >
+          <Plus className="w-4 h-4" />
+          Run your first scrape
+        </button>
+        <p className="text-xs text-text-muted mt-4">
+          Just exploring? Seed demo data with{" "}
+          <code className="px-1.5 py-0.5 rounded bg-glass-bg">make seed</code>.
+        </p>
       </div>
     );
   }

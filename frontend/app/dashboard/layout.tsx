@@ -17,6 +17,7 @@ import {
   Search,
   Zap,
   BarChart3,
+  User,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -86,6 +87,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
   const navItems = [
     { label: "Pipeline", icon: LayoutDashboard, href: "/dashboard" },
     { label: "Analytics", icon: BarChart3, href: "/dashboard/analytics" },
+    { label: "Account", icon: User, href: "/dashboard/account" },
     { label: "Settings", icon: Settings, href: "/dashboard/settings" },
   ];
 
