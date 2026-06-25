@@ -95,8 +95,11 @@ export function PitchGenerator() {
         setStreamedText((prev) => prev + chunk);
       }
     } catch (err) {
+      // Drop any partial text so the error (and a clear retry) is shown
+      // instead of a half-written pitch that looks complete.
+      setStreamedText("");
       setError(err instanceof Error ? err.message : "Generation failed");
-      toast.error("Failed to generate pitch.");
+      toast.error("Failed to generate pitch. Click Generate to retry.");
     } finally {
       setIsStreaming(false);
     }
