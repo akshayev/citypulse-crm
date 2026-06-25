@@ -72,8 +72,25 @@ def _parse_score_json(response_text: str) -> dict:
     return {"heat_score": heat_score, "reasoning": score_data.get("reasoning", "")}
 
 
-def _gemini_score_sync(context: str) -> dict:
-    """Score via Gemini (blocking; call inside a thread)."""
+# Approx LLM pricing (USD per 1M tokens). Groq free tier is treated as $0.
+_PRICING = {
+    "gemini": {"in": 0.30, "out": 2.50},
+    "groq": {"in": 0.0, "out": 0.0},
+}
+
+
+def estimate_cost_usd(usage: dict) -> float:
+    """Estimate the USD cost of one LLM call from its token usage."""
+    p = _PRICING.get(usage.get("provider", ""), {"in": 0.0, "out": 0.0})
+    return round(
+        (usage.get("tokens_in", 0) * p["in"] + usage.get("tokens_out", 0) * p["out"])
+        / 1_000_000,
+        6,
+    )
+
+
+def _gemini_score_sync(context: str) -> tuple[dict, dict]:
+    """Score via Gemini (blocking; call inside a thread). Returns (score, usage)."""
     client = genai.Client(api_key=settings.gemini_api_key)
     response = client.models.generate_content(
         model="gemini-2.5-flash",
@@ -84,11 +101,17 @@ def _gemini_score_sync(context: str) -> dict:
             response_mime_type="application/json",
         ),
     )
-    return _parse_score_json(response.text)
+    um = getattr(response, "usage_metadata", None)
+    usage = {
+        "provider": "gemini",
+        "tokens_in": getattr(um, "prompt_token_count", 0) or 0,
+        "tokens_out": getattr(um, "candidates_token_count", 0) or 0,
+    }
+    return _parse_score_json(response.text), usage
 
 
-def _groq_score_sync(context: str) -> dict:
-    """Score via Groq's free OpenAI-compatible API (blocking; call inside a thread)."""
+def _groq_score_sync(context: str) -> tuple[dict, dict]:
+    """Score via Groq's free OpenAI-compatible API (blocking). Returns (score, usage)."""
     resp = httpx.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {settings.groq_api_key}"},
@@ -104,15 +127,22 @@ def _groq_score_sync(context: str) -> dict:
         timeout=30.0,
     )
     resp.raise_for_status()
-    content = resp.json()["choices"][0]["message"]["content"]
-    return _parse_score_json(content)
+    body = resp.json()
+    content = body["choices"][0]["message"]["content"]
+    u = body.get("usage", {}) or {}
+    usage = {
+        "provider": "groq",
+        "tokens_in": u.get("prompt_tokens", 0) or 0,
+        "tokens_out": u.get("completion_tokens", 0) or 0,
+    }
+    return _parse_score_json(content), usage
 
 
-async def _llm_heat_score(context: str) -> dict:
+async def _llm_heat_score(context: str) -> tuple[dict, dict]:
     """Heat-score `context`, preferring Gemini and falling back to the free Groq tier.
 
-    Falls back to Groq when Gemini errors OR when the daily Gemini FinOps cap is
-    reached. Raises if neither provider is available.
+    Returns (score, usage). Falls back to Groq when Gemini errors OR when the
+    daily Gemini FinOps cap is reached. Raises if neither provider is available.
     """
     gemini_allowed = True
     try:
@@ -178,7 +208,7 @@ async def score_single_lead(
 
         # Score via Gemini (subject to the FinOps cap), falling back to the
         # free Groq tier when Gemini errors or the daily cap is reached.
-        score = await _llm_heat_score(context)
+        score, usage = await _llm_heat_score(context)
         heat_score = score["heat_score"]
         reasoning = score["reasoning"]
 
@@ -215,6 +245,7 @@ async def score_single_lead(
             "shop_name": shop["shop_name"],
             "heat_score": heat_score,
             "reasoning": reasoning,
+            "usage": usage,
         }
 
     except HTTPException as e:
@@ -264,6 +295,11 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
     scored = 0
     errors = 0
     quota_exhausted = False
+    gemini_calls = 0
+    groq_calls = 0
+    tokens_in = 0
+    tokens_out = 0
+    cost_usd = 0.0
 
     for shop in result.data:
         # Check if already scored
@@ -275,11 +311,19 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
             logger.info(f"Skipping already-scored lead: {shop['place_id']}")
             continue
 
-        result = await score_single_lead(shop["place_id"])
+        res = await score_single_lead(shop["place_id"])
 
-        if result.get("status") == "success":
+        if res.get("status") == "success":
             scored += 1
-        elif result.get("status") == "quota_exceeded":
+            usage = res.get("usage") or {}
+            if usage.get("provider") == "gemini":
+                gemini_calls += 1
+            elif usage.get("provider") == "groq":
+                groq_calls += 1
+            tokens_in += usage.get("tokens_in", 0)
+            tokens_out += usage.get("tokens_out", 0)
+            cost_usd += estimate_cost_usd(usage)
+        elif res.get("status") == "quota_exceeded":
             quota_exhausted = True
             logger.warning(
                 "Stopping batch scoring early due to daily Gemini quota exhaustion."
@@ -289,7 +333,8 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
             errors += 1
 
     logger.info(
-        f"Gold layer batch: Scored {scored}, Errors: {errors} (scrape_id: {scrape_id})"
+        f"Gold layer batch: Scored {scored}, Errors: {errors}, "
+        f"Cost: ${cost_usd:.4f} (gemini={gemini_calls}, groq={groq_calls}, scrape_id: {scrape_id})"
     )
 
     return {
@@ -298,4 +343,9 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
         "scored": scored,
         "errors": errors,
         "quota_exhausted": quota_exhausted,
+        "gemini_calls": gemini_calls,
+        "groq_calls": groq_calls,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "llm_cost_usd": round(cost_usd, 6),
     }

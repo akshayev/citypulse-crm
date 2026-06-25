@@ -31,6 +31,7 @@ from backend.database.dlq import (
     mark_failed_terminal,
 )
 from backend.database.runs import create_run, update_run, _now
+from backend.database.metrics import get_pipeline_metrics, get_dlq_status
 from fastapi import Header, Depends
 
 # Configure logging
@@ -214,6 +215,18 @@ async def get_usage():
     return usage
 
 
+@app.get("/api/metrics", dependencies=[Depends(verify_api_key)])
+async def get_metrics(days: int = 30):
+    """Pipeline observability: funnel, cost, provider split over a window."""
+    return await get_pipeline_metrics(days=days)
+
+
+@app.get("/api/dlq/status", dependencies=[Depends(verify_api_key)])
+async def dlq_status():
+    """Dead-letter queue health: counts by status + oldest pending."""
+    return await get_dlq_status()
+
+
 @app.post(
     "/api/scrape", response_model=ScrapeResponse, dependencies=[Depends(verify_api_key)]
 )
@@ -276,6 +289,7 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
             run_id, bronze_count=scrape_result.get("count", 0), status="silver"
         )
         clean_result = await clean_raw_scrape(scrape_id=scrape_id)
+        clean_result = clean_result or {}
 
         if clean_result.get("status") != "success":
             logger.error(f"Pipeline aborted at Silver: {clean_result}")
@@ -293,7 +307,11 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
 
         # Step 3: Gold — Score with AI
         await update_run(
-            run_id, silver_count=clean_result.get("cleaned", 0), status="gold"
+            run_id,
+            silver_count=clean_result.get("cleaned", 0),
+            blocked_count=clean_result.get("blocked", 0),
+            dq_failed=clean_result.get("dq_failed", 0),
+            status="gold",
         )
         score_result = await score_batch_from_scrape(scrape_id=scrape_id)
 
@@ -305,6 +323,9 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
         await update_run(
             run_id,
             gold_count=score_result.get("scored", 0),
+            gemini_calls=score_result.get("gemini_calls", 0),
+            groq_calls=score_result.get("groq_calls", 0),
+            llm_cost_usd=score_result.get("llm_cost_usd", 0),
             status="done",
             finished_at=_now(),
         )

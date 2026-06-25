@@ -11,6 +11,7 @@ import {
   Zap,
   TrendingUp,
   AlertTriangle,
+  Activity,
 } from "lucide-react";
 
 /**
@@ -35,6 +36,28 @@ export default function AnalyticsPage() {
     queryKey: ["api-usage"],
     queryFn: async () => {
       const res = await fetch("/api/usage");
+      if (!res.ok) return null;
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  // Pipeline observability metrics (funnel, cost, provider split)
+  const { data: metrics } = useQuery({
+    queryKey: ["pipeline-metrics"],
+    queryFn: async () => {
+      const res = await fetch("/api/metrics");
+      if (!res.ok) return null;
+      return res.json();
+    },
+    refetchInterval: 30000,
+  });
+
+  // Dead-letter queue health
+  const { data: dlq } = useQuery({
+    queryKey: ["dlq-status"],
+    queryFn: async () => {
+      const res = await fetch("/api/dlq/status");
       if (!res.ok) return null;
       return res.json();
     },
@@ -174,6 +197,84 @@ export default function AnalyticsPage() {
           </div>
         </div>
       </div>
+
+      {/* Pipeline Health / Observability (last N days) */}
+      <div className="glass-card p-6">
+        <h2 className="text-sm font-semibold text-text-primary mb-4 flex items-center gap-2">
+          <Activity className="w-4 h-4 text-accent" />
+          Pipeline Health (last {metrics?.window_days ?? 30} days)
+        </h2>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <MiniStat
+            label="Pipeline Runs"
+            value={`${metrics?.totals?.runs ?? 0}`}
+            sub={`${metrics?.totals?.runs_failed ?? 0} failed`}
+          />
+          <MiniStat
+            label="Bronze → Silver"
+            value={`${metrics?.funnel?.bronze_to_silver_pct ?? 0}%`}
+            sub={`${metrics?.totals?.silver ?? 0} / ${metrics?.totals?.bronze ?? 0}`}
+          />
+          <MiniStat
+            label="Silver → Gold"
+            value={`${metrics?.funnel?.silver_to_gold_pct ?? 0}%`}
+            sub={`${metrics?.totals?.gold ?? 0} leads`}
+          />
+          <MiniStat
+            label="LLM Cost"
+            value={`$${(Number(metrics?.totals?.llm_cost_usd) || 0).toFixed(4)}`}
+            sub={`$${metrics?.cost_per_1k_leads_usd ?? 0} / 1k leads`}
+          />
+          <MiniStat
+            label="Gemini / Groq"
+            value={`${metrics?.provider_split?.gemini_pct ?? 0}% / ${metrics?.provider_split?.groq_pct ?? 0}%`}
+            sub={`${metrics?.totals?.gemini_calls ?? 0} + ${metrics?.totals?.groq_calls ?? 0} calls`}
+          />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-x-6 gap-y-1 text-xs text-text-secondary">
+          <span>
+            DNC blocked:{" "}
+            <b className="text-text-primary">{metrics?.totals?.blocked ?? 0}</b>
+          </span>
+          <span>
+            DQ rejected:{" "}
+            <b className="text-text-primary">{metrics?.totals?.dq_failed ?? 0}</b>
+          </span>
+          <span>
+            DLQ pending:{" "}
+            <b className="text-warning">{dlq?.by_status?.pending ?? 0}</b>
+          </span>
+          <span>
+            DLQ retrying:{" "}
+            <b className="text-info">{dlq?.by_status?.retrying ?? 0}</b>
+          </span>
+          <span>
+            DLQ failed: <b className="text-danger">{dlq?.by_status?.failed ?? 0}</b>
+          </span>
+          <span>
+            DLQ resolved:{" "}
+            <b className="text-success">{dlq?.by_status?.resolved ?? 0}</b>
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({
+  label,
+  value,
+  sub,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+}) {
+  return (
+    <div className="glass-card p-4">
+      <p className="text-lg font-bold text-text-primary">{value}</p>
+      <p className="text-xs text-text-secondary">{label}</p>
+      {sub && <p className="text-[10px] text-text-muted mt-0.5">{sub}</p>}
     </div>
   );
 }
