@@ -178,3 +178,39 @@ CREATE POLICY "admin_full_access_pipeline_runs"
     TO authenticated
     USING (is_admin())
     WITH CHECK (is_admin());
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- LEAD ACTIVITY (D1) — mirror crm_leads visibility (admin all; reps assigned/unassigned)
+-- ──────────────────────────────────────────────────────────────────────────
+ALTER TABLE lead_activity ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "activity_select_visible_leads"
+    ON lead_activity
+    FOR SELECT
+    TO authenticated
+    USING (
+        is_admin()
+        OR EXISTS (
+            SELECT 1 FROM crm_leads l
+            WHERE l.id = lead_activity.lead_id
+              AND (l.assigned_to = auth.uid() OR l.assigned_to IS NULL)
+        )
+    );
+
+CREATE POLICY "activity_insert_visible_leads"
+    ON lead_activity
+    FOR INSERT
+    TO authenticated
+    WITH CHECK (
+        created_by = auth.uid()
+        -- Users may only add notes; system types come from the trigger / service role.
+        AND type = 'note'
+        AND (
+            is_admin()
+            OR EXISTS (
+                SELECT 1 FROM crm_leads l
+                WHERE l.id = lead_activity.lead_id
+                  AND (l.assigned_to = auth.uid() OR l.assigned_to IS NULL)
+            )
+        )
+    );

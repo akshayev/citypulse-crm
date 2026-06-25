@@ -194,6 +194,37 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 CREATE INDEX idx_pipeline_runs_started ON pipeline_runs(started_at DESC);
 
 -- ==============================================================================
+-- LEAD ACTIVITY (D1 — notes & timeline; status changes auto-logged by trigger)
+-- ==============================================================================
+CREATE TABLE lead_activity (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    lead_id     uuid NOT NULL REFERENCES crm_leads(id) ON DELETE CASCADE,
+    type        text NOT NULL CHECK (type IN ('note', 'status_change', 'pitch', 'assignment')),
+    content     text CHECK (content IS NULL OR char_length(content) <= 4000),
+    meta        jsonb,
+    created_by  uuid DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE SET NULL,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_lead_activity_lead_id_created_at ON lead_activity (lead_id, created_at DESC);
+
+-- Auto-log status changes (SECURITY DEFINER so the audit row is never suppressed).
+CREATE OR REPLACE FUNCTION log_lead_status_change()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    IF NEW.status IS DISTINCT FROM OLD.status THEN
+        INSERT INTO lead_activity (lead_id, type, content, meta, created_by)
+        VALUES (NEW.id, 'status_change',
+                format('Status changed from %s to %s', OLD.status, NEW.status),
+                jsonb_build_object('from', OLD.status, 'to', NEW.status), auth.uid());
+    END IF;
+    RETURN NEW;
+END;
+$$;
+CREATE TRIGGER trg_log_lead_status_change
+    AFTER UPDATE OF status ON crm_leads
+    FOR EACH ROW EXECUTE FUNCTION log_lead_status_change();
+
+-- ==============================================================================
 -- ENABLE REALTIME (Kanban multi-user sync + live job status)
 -- ==============================================================================
 ALTER PUBLICATION supabase_realtime ADD TABLE crm_leads;
