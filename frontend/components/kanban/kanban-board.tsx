@@ -65,8 +65,14 @@ const COLUMNS = [
  */
 export function KanbanBoard() {
   const queryClient = useQueryClient();
-  const { activeDragId, setActiveDragId, searchQuery, openScrapeModal } =
-    useKanbanStore();
+  const {
+    activeDragId,
+    setActiveDragId,
+    searchQuery,
+    openScrapeModal,
+    filterHeatMin,
+    filterTags,
+  } = useKanbanStore();
 
   // Configure sensors with touch support (spec: 06)
   const sensors = useSensors(
@@ -284,8 +290,15 @@ export function KanbanBoard() {
     );
   }
 
-  // Filter leads based on searchQuery from the store
+  // Filter leads: search text + heat minimum + tag match (all from the store).
   const filteredLeads = leads.filter((lead) => {
+    if (filterHeatMin > 0 && lead.heat_score < filterHeatMin) return false;
+    if (
+      filterTags.length > 0 &&
+      !filterTags.some((t) => (lead.tags ?? []).includes(t))
+    ) {
+      return false;
+    }
     if (!searchQuery) return true;
     const lowerQuery = searchQuery.toLowerCase();
     const shop = lead.cleaned_shops;

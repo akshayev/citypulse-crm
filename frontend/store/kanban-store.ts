@@ -40,6 +40,14 @@ interface KanbanStore {
   // Search & filters (mirrored from URL for quick access)
   searchQuery: string;
   setSearchQuery: (query: string) => void;
+
+  // Advanced filters (D4)
+  filterHeatMin: number; // 0 = no minimum
+  filterTags: string[]; // empty = all; match leads having ANY of these
+  setFilterHeatMin: (n: number) => void;
+  setFilterTags: (tags: string[]) => void;
+  applyFilters: (f: { heatMin?: number; tags?: string[]; search?: string }) => void;
+  resetFilters: () => void;
 }
 
 export const useKanbanStore = create<KanbanStore>((set) => ({
@@ -81,4 +89,17 @@ export const useKanbanStore = create<KanbanStore>((set) => ({
   // Search
   searchQuery: "",
   setSearchQuery: (query) => set({ searchQuery: query }),
+
+  // Advanced filters
+  filterHeatMin: 0,
+  filterTags: [],
+  setFilterHeatMin: (n) => set({ filterHeatMin: n }),
+  setFilterTags: (tags) => set({ filterTags: tags }),
+  applyFilters: (f) =>
+    set((s) => ({
+      filterHeatMin: f.heatMin ?? s.filterHeatMin,
+      filterTags: f.tags ?? s.filterTags,
+      searchQuery: f.search ?? s.searchQuery,
+    })),
+  resetFilters: () => set({ filterHeatMin: 0, filterTags: [], searchQuery: "" }),
 }));
