@@ -25,8 +25,15 @@ from selenium.webdriver.support import expected_conditions as EC
 from backend.config import settings
 from backend.database.supabase_client import get_supabase_client
 from backend.database.dlq import push_to_dlq
+from backend.retry import transient_retry
 
 logger = logging.getLogger(__name__)
+
+
+@transient_retry
+def _serpapi_search(params: dict) -> dict:
+    """SerpApi call with transient-error retries (call inside a thread)."""
+    return GoogleSearch(params).get_dict()
 
 
 async def scrape_google_maps(
@@ -57,8 +64,7 @@ async def scrape_google_maps(
         }
 
         logger.info(f"Starting SerpApi scrape: '{query}'")
-        search = GoogleSearch(params)
-        results = await asyncio.to_thread(search.get_dict)
+        results = await asyncio.to_thread(_serpapi_search, params)
         local_results = results.get("local_results", [])
 
         if local_results:

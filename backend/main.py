@@ -40,6 +40,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Reliability controls for the in-process pipeline.
+_PIPELINE_CONCURRENCY = 3  # max simultaneous full pipelines
+_PIPELINE_SEMAPHORE = asyncio.Semaphore(_PIPELINE_CONCURRENCY)
+_active_runs: set[str] = set()  # run_ids currently executing (for graceful shutdown)
+_SCRAPE_TIMEOUT = 180  # seconds
+_CLEAN_TIMEOUT = 180
+_SCORE_TIMEOUT = 900  # batch scoring can be large (parallel chunks)
+
 
 # ============================================================================
 # LIFESPAN: Background DLQ retry worker
@@ -121,6 +129,18 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 CityPulse Backend started. DLQ worker running.")
     yield
     task.cancel()
+    # Graceful shutdown: mark any in-flight runs as interrupted so the UI does
+    # not show them stuck forever (best-effort).
+    for rid in list(_active_runs):
+        try:
+            await update_run(
+                rid,
+                status="failed",
+                error="Backend restarted; run interrupted.",
+                finished_at=_now(),
+            )
+        except Exception:
+            pass
     logger.info("Backend shutting down.")
 
 
@@ -266,10 +286,16 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
     """
     logger.info(f"Pipeline started: {niche} in {city} (run_id: {run_id})")
 
+    # Bound concurrent pipelines; register the run for graceful-shutdown handling.
+    await _PIPELINE_SEMAPHORE.acquire()
+    if run_id:
+        _active_runs.add(run_id)
     try:
         # Step 1: Bronze — Scrape
         await update_run(run_id, status="bronze")
-        scrape_result = await scrape_google_maps(city=city, niche=niche)
+        scrape_result = await asyncio.wait_for(
+            scrape_google_maps(city=city, niche=niche), timeout=_SCRAPE_TIMEOUT
+        )
 
         if scrape_result.get("status") != "success":
             logger.error(f"Pipeline aborted at Bronze: {scrape_result}")
@@ -288,7 +314,9 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
         await update_run(
             run_id, bronze_count=scrape_result.get("count", 0), status="silver"
         )
-        clean_result = await clean_raw_scrape(scrape_id=scrape_id)
+        clean_result = await asyncio.wait_for(
+            clean_raw_scrape(scrape_id=scrape_id), timeout=_CLEAN_TIMEOUT
+        )
         clean_result = clean_result or {}
 
         if clean_result.get("status") != "success":
@@ -313,7 +341,9 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
             dq_failed=clean_result.get("dq_failed", 0),
             status="gold",
         )
-        score_result = await score_batch_from_scrape(scrape_id=scrape_id)
+        score_result = await asyncio.wait_for(
+            score_batch_from_scrape(scrape_id=scrape_id), timeout=_SCORE_TIMEOUT
+        )
 
         logger.info(
             f"Gold complete: {score_result.get('scored', 0)} scored, "
@@ -336,6 +366,10 @@ async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
         await update_run(
             run_id, status="failed", error=str(e)[:500], finished_at=_now()
         )
+    finally:
+        if run_id:
+            _active_runs.discard(run_id)
+        _PIPELINE_SEMAPHORE.release()
 
 
 @app.post("/api/score/{place_id}", dependencies=[Depends(verify_api_key)])

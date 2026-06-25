@@ -20,8 +20,12 @@ from backend.database.supabase_client import get_supabase_client
 from backend.database.finops import check_and_increment_gemini_quota
 from backend.database.dlq import push_to_dlq
 from backend.ai_pipeline.contracts import ScoredLead
+from backend.retry import transient_retry
 
 logger = logging.getLogger(__name__)
+
+# Max concurrent LLM scoring calls within a batch (bounds API load / latency).
+_SCORE_CONCURRENCY = 5
 
 # Exact system prompt from 11-LLM-Prompt-Architecture.md
 HEAT_SCORE_SYSTEM_PROMPT = """You are an expert sales analyst data pipeline. Your job is to evaluate local business data and assign a "Heat Score" from 0 to 100 indicating how likely they are to need web development or digital marketing services.
@@ -89,6 +93,7 @@ def estimate_cost_usd(usage: dict) -> float:
     )
 
 
+@transient_retry
 def _gemini_score_sync(context: str) -> tuple[dict, dict]:
     """Score via Gemini (blocking; call inside a thread). Returns (score, usage)."""
     client = genai.Client(api_key=settings.gemini_api_key)
@@ -110,6 +115,7 @@ def _gemini_score_sync(context: str) -> tuple[dict, dict]:
     return _parse_score_json(response.text), usage
 
 
+@transient_retry
 def _groq_score_sync(context: str) -> tuple[dict, dict]:
     """Score via Groq's free OpenAI-compatible API (blocking). Returns (score, usage)."""
     resp = httpx.post(
@@ -278,7 +284,6 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
     This is the final step in the Bronze → Silver → Gold pipeline.
     """
     db = get_supabase_client()
-    import asyncio
 
     # Get all cleaned shops linked to this scrape
     result = await asyncio.to_thread(
@@ -292,6 +297,15 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
     if not result.data:
         return {"status": "no_shops", "scrape_id": scrape_id, "scored": 0}
 
+    place_ids = [s["place_id"] for s in result.data]
+
+    # Batch the "already scored" check — one query instead of N.
+    existing = await asyncio.to_thread(
+        db.table("crm_leads").select("place_id").in_("place_id", place_ids).execute
+    )
+    already = {r["place_id"] for r in (existing.data or [])}
+    to_score = [pid for pid in place_ids if pid not in already]
+
     scored = 0
     errors = 0
     quota_exhausted = False
@@ -301,36 +315,37 @@ async def score_batch_from_scrape(scrape_id: str) -> dict:
     tokens_out = 0
     cost_usd = 0.0
 
-    for shop in result.data:
-        # Check if already scored
-        existing = await asyncio.to_thread(
-            db.table("crm_leads").select("id").eq("place_id", shop["place_id"]).execute
+    # Score in bounded-concurrency chunks (parallel within a chunk). If the
+    # daily quota is hit, stop launching further chunks.
+    for i in range(0, len(to_score), _SCORE_CONCURRENCY):
+        chunk = to_score[i : i + _SCORE_CONCURRENCY]
+        results = await asyncio.gather(
+            *(score_single_lead(pid) for pid in chunk), return_exceptions=True
         )
-
-        if existing.data:
-            logger.info(f"Skipping already-scored lead: {shop['place_id']}")
-            continue
-
-        res = await score_single_lead(shop["place_id"])
-
-        if res.get("status") == "success":
-            scored += 1
-            usage = res.get("usage") or {}
-            if usage.get("provider") == "gemini":
-                gemini_calls += 1
-            elif usage.get("provider") == "groq":
-                groq_calls += 1
-            tokens_in += usage.get("tokens_in", 0)
-            tokens_out += usage.get("tokens_out", 0)
-            cost_usd += estimate_cost_usd(usage)
-        elif res.get("status") == "quota_exceeded":
-            quota_exhausted = True
+        for res in results:
+            if isinstance(res, Exception):
+                errors += 1
+                continue
+            status = res.get("status")
+            if status == "success":
+                scored += 1
+                usage = res.get("usage") or {}
+                if usage.get("provider") == "gemini":
+                    gemini_calls += 1
+                elif usage.get("provider") == "groq":
+                    groq_calls += 1
+                tokens_in += usage.get("tokens_in", 0)
+                tokens_out += usage.get("tokens_out", 0)
+                cost_usd += estimate_cost_usd(usage)
+            elif status == "quota_exceeded":
+                quota_exhausted = True
+            else:
+                errors += 1
+        if quota_exhausted:
             logger.warning(
                 "Stopping batch scoring early due to daily Gemini quota exhaustion."
             )
             break
-        else:
-            errors += 1
 
     logger.info(
         f"Gold layer batch: Scored {scored}, Errors: {errors}, "
