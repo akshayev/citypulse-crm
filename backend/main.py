@@ -30,6 +30,7 @@ from backend.database.dlq import (
     mark_failed_retry,
     mark_failed_terminal,
 )
+from backend.database.runs import create_run, update_run, _now
 from fastapi import Header, Depends
 
 # Configure logging
@@ -177,6 +178,7 @@ class ScrapeRequest(BaseModel):
 class ScrapeResponse(BaseModel):
     status: str
     message: str
+    run_id: str | None = None
     scrape_id: str | None = None
     results_count: int = 0
 
@@ -224,59 +226,95 @@ async def trigger_scrape(request: ScrapeRequest, background_tasks: BackgroundTas
     # Atomically check and increment scraper quota
     await check_and_increment_scraper_quota()
 
-    # Launch the full pipeline in the background
+    # Create a run row so the UI can show live job status, then launch the
+    # pipeline in the background.
+    run_id = await create_run(request.city, request.niche.value)
     background_tasks.add_task(
         _run_full_pipeline,
         city=request.city,
         niche=request.niche.value,
+        run_id=run_id,
     )
 
     return ScrapeResponse(
         status="accepted",
+        run_id=run_id,
         message=f"Scraping pipeline started for '{request.niche.value}' in '{request.city}'. "
-        f"Results will appear in the Kanban board via real-time sync.",
+        f"Track progress in the Active Jobs panel; results appear on the board live.",
     )
 
 
-async def _run_full_pipeline(city: str, niche: str):
+async def _run_full_pipeline(city: str, niche: str, run_id: str | None = None):
     """
-    Execute the full Medallion pipeline:
+    Execute the full Medallion pipeline, updating the run row at each stage:
     1. Bronze: Scrape → raw_scrapes
     2. Silver: Clean → cleaned_shops
     3. Gold: Score → crm_leads
     """
-    logger.info(f"Pipeline started: {niche} in {city}")
+    logger.info(f"Pipeline started: {niche} in {city} (run_id: {run_id})")
 
-    # Step 1: Bronze — Scrape
-    scrape_result = await scrape_google_maps(city=city, niche=niche)
+    try:
+        # Step 1: Bronze — Scrape
+        await update_run(run_id, status="bronze")
+        scrape_result = await scrape_google_maps(city=city, niche=niche)
 
-    if scrape_result.get("status") != "success":
-        logger.error(f"Pipeline aborted at Bronze: {scrape_result}")
-        return
+        if scrape_result.get("status") != "success":
+            logger.error(f"Pipeline aborted at Bronze: {scrape_result}")
+            await update_run(
+                run_id,
+                status="failed",
+                error=str(scrape_result.get("error", "scrape failed"))[:500],
+                finished_at=_now(),
+            )
+            return
 
-    scrape_id = scrape_result["scrape_id"]
-    logger.info(f"Bronze complete: {scrape_result['count']} results")
+        scrape_id = scrape_result["scrape_id"]
+        logger.info(f"Bronze complete: {scrape_result['count']} results")
 
-    # Step 2: Silver — Clean
-    clean_result = await clean_raw_scrape(scrape_id=scrape_id)
+        # Step 2: Silver — Clean
+        await update_run(
+            run_id, bronze_count=scrape_result.get("count", 0), status="silver"
+        )
+        clean_result = await clean_raw_scrape(scrape_id=scrape_id)
 
-    if clean_result.get("status") != "success":
-        logger.error(f"Pipeline aborted at Silver: {clean_result}")
-        return
+        if clean_result.get("status") != "success":
+            logger.error(f"Pipeline aborted at Silver: {clean_result}")
+            await update_run(
+                run_id,
+                status="failed",
+                error=str(clean_result.get("error", "clean failed"))[:500],
+                finished_at=_now(),
+            )
+            return
 
-    logger.info(
-        f"Silver complete: {clean_result['cleaned']} cleaned, {clean_result['blocked']} blocked"
-    )
+        logger.info(
+            f"Silver complete: {clean_result['cleaned']} cleaned, {clean_result['blocked']} blocked"
+        )
 
-    # Step 3: Gold — Score with AI
-    score_result = await score_batch_from_scrape(scrape_id=scrape_id)
+        # Step 3: Gold — Score with AI
+        await update_run(
+            run_id, silver_count=clean_result.get("cleaned", 0), status="gold"
+        )
+        score_result = await score_batch_from_scrape(scrape_id=scrape_id)
 
-    logger.info(
-        f"Gold complete: {score_result.get('scored', 0)} scored, "
-        f"{score_result.get('errors', 0)} errors"
-    )
+        logger.info(
+            f"Gold complete: {score_result.get('scored', 0)} scored, "
+            f"{score_result.get('errors', 0)} errors"
+        )
 
-    logger.info(f"✅ Pipeline complete: {niche} in {city}")
+        await update_run(
+            run_id,
+            gold_count=score_result.get("scored", 0),
+            status="done",
+            finished_at=_now(),
+        )
+        logger.info(f"✅ Pipeline complete: {niche} in {city} (run_id: {run_id})")
+
+    except Exception as e:
+        logger.error(f"Pipeline crashed (run_id: {run_id}): {e}")
+        await update_run(
+            run_id, status="failed", error=str(e)[:500], finished_at=_now()
+        )
 
 
 @app.post("/api/score/{place_id}", dependencies=[Depends(verify_api_key)])

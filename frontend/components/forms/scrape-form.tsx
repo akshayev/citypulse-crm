@@ -74,12 +74,13 @@ export function ScrapeForm() {
       } else if (response.ok) {
         setResult({
           status: "success",
-          message: body.message || "Pipeline started! Results will appear shortly.",
+          message:
+            body.message ||
+            "Pipeline started! Track it in the Active Jobs panel; leads appear live.",
         });
-        // Refetch leads after a delay to catch new data
-        setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ["leads"] });
-        }, 5000);
+        // Show the new job immediately; leads stream in via realtime as they're
+        // scored (no arbitrary timeout needed).
+        queryClient.invalidateQueries({ queryKey: ["pipeline_runs"] });
       } else {
         throw new Error(body.detail || "Failed to trigger scrape");
       }

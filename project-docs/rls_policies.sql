@@ -158,3 +158,23 @@ CREATE POLICY "admin_full_access_dlq"
     TO authenticated
     USING (is_admin())
     WITH CHECK (is_admin());
+
+-- ==============================================================================
+-- PIPELINE_RUNS: any authenticated user can watch job status; backend (service
+-- role) writes; admins full access.
+-- ==============================================================================
+
+ALTER TABLE pipeline_runs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "authenticated_select_pipeline_runs"
+    ON pipeline_runs
+    FOR SELECT
+    TO authenticated
+    USING (TRUE);
+
+CREATE POLICY "admin_full_access_pipeline_runs"
+    ON pipeline_runs
+    FOR ALL
+    TO authenticated
+    USING (is_admin())
+    WITH CHECK (is_admin());

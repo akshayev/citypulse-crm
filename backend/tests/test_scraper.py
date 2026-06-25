@@ -25,6 +25,7 @@ def test_scrape_endpoint_success(mocker):
     # We also mock get_supabase_client because Supabase constructor checks for a valid JWT format for the key
     # We must patch asyncio.to_thread if the underlying methods are mocked properly or better yet, patch the atomic call
     mocker.patch("backend.main.check_and_increment_scraper_quota", return_value=True)
+    mocker.patch("backend.main.create_run", return_value="test-run-id")
     mocker.patch("backend.main._run_full_pipeline", return_value=True)
 
     headers = {"x-api-key": "dev-secret-key-123"}
@@ -35,3 +36,4 @@ def test_scrape_endpoint_success(mocker):
     )
     assert response.status_code == 200
     assert response.json()["status"] == "accepted"
+    assert response.json()["run_id"] == "test-run-id"

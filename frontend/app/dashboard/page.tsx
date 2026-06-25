@@ -5,6 +5,7 @@ export const dynamic = "force-dynamic";
 import { KanbanBoard } from "@/components/kanban/kanban-board";
 import { PitchGenerator } from "@/components/kanban/pitch-generator";
 import { ScrapeForm } from "@/components/forms/scrape-form";
+import { ActiveJobs } from "@/components/jobs/active-jobs";
 import { LeadDetailsModal } from "@/components/kanban/lead-details-modal";
 import { useKanbanStore } from "@/store/kanban-store";
 import { Plus } from "lucide-react";
@@ -37,6 +38,9 @@ export default function DashboardPage() {
           New Scrape
         </button>
       </div>
+
+      {/* Live scrape job status */}
+      <ActiveJobs />
 
       {/* Kanban Board */}
       <div className="flex-1 min-h-0">
