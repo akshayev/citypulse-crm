@@ -214,3 +214,20 @@ CREATE POLICY "activity_insert_visible_leads"
             )
         )
     );
+
+-- ──────────────────────────────────────────────────────────────────────────
+-- SAVED FILTERS (D4) — each user manages only their own
+-- ──────────────────────────────────────────────────────────────────────────
+ALTER TABLE saved_filters ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "saved_filters_select_own"
+    ON saved_filters FOR SELECT TO authenticated
+    USING (user_id = auth.uid());
+
+CREATE POLICY "saved_filters_insert_own"
+    ON saved_filters FOR INSERT TO authenticated
+    WITH CHECK (user_id = auth.uid());
+
+CREATE POLICY "saved_filters_delete_own"
+    ON saved_filters FOR DELETE TO authenticated
+    USING (user_id = auth.uid());

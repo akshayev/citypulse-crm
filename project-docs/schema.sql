@@ -227,6 +227,18 @@ CREATE TRIGGER trg_log_lead_status_change
     FOR EACH ROW EXECUTE FUNCTION log_lead_status_change();
 
 -- ==============================================================================
+-- SAVED FILTERS (D4 — per-user advanced-search presets)
+-- ==============================================================================
+CREATE TABLE saved_filters (
+    id          uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     uuid NOT NULL DEFAULT auth.uid() REFERENCES auth.users(id) ON DELETE CASCADE,
+    name        text NOT NULL CHECK (char_length(name) BETWEEN 1 AND 60),
+    query       jsonb NOT NULL DEFAULT '{}'::jsonb,
+    created_at  timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_saved_filters_user ON saved_filters (user_id, created_at DESC);
+
+-- ==============================================================================
 -- ENABLE REALTIME (Kanban multi-user sync + live job status)
 -- ==============================================================================
 ALTER PUBLICATION supabase_realtime ADD TABLE crm_leads;
