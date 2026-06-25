@@ -171,6 +171,25 @@ CREATE INDEX idx_dlq_status ON dlq_tasks(status);
 CREATE INDEX idx_dlq_retry ON dlq_tasks(next_retry_at) WHERE status = 'pending';
 
 -- ==============================================================================
--- ENABLE REALTIME for CRM leads table (Kanban multi-user sync)
+-- PIPELINE RUNS: per-scrape job tracking (live status + observability backbone)
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+    id            UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    city          VARCHAR(255),
+    niche         VARCHAR(255),
+    status        VARCHAR(20) NOT NULL DEFAULT 'queued',  -- queued|bronze|silver|gold|done|failed
+    bronze_count  INTEGER DEFAULT 0,
+    silver_count  INTEGER DEFAULT 0,
+    gold_count    INTEGER DEFAULT 0,
+    error         TEXT,
+    created_by    UUID REFERENCES auth.users(id),
+    started_at    TIMESTAMPTZ DEFAULT NOW(),
+    finished_at   TIMESTAMPTZ
+);
+CREATE INDEX idx_pipeline_runs_started ON pipeline_runs(started_at DESC);
+
+-- ==============================================================================
+-- ENABLE REALTIME (Kanban multi-user sync + live job status)
 -- ==============================================================================
 ALTER PUBLICATION supabase_realtime ADD TABLE crm_leads;
+ALTER PUBLICATION supabase_realtime ADD TABLE pipeline_runs;
