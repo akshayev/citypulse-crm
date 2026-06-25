@@ -7,6 +7,7 @@ import { PitchGenerator } from "@/components/kanban/pitch-generator";
 import { ScrapeForm } from "@/components/forms/scrape-form";
 import { ActiveJobs } from "@/components/jobs/active-jobs";
 import { LeadDetailsModal } from "@/components/kanban/lead-details-modal";
+import { BulkToolbar } from "@/components/kanban/bulk-toolbar";
 import { useKanbanStore } from "@/store/kanban-store";
 import { Plus } from "lucide-react";
 
@@ -51,6 +52,9 @@ export default function DashboardPage() {
       <PitchGenerator />
       <ScrapeForm />
       <LeadDetailsModal />
+
+      {/* Bulk-action toolbar (shows when leads are selected) */}
+      <BulkToolbar />
     </div>
   );
 }

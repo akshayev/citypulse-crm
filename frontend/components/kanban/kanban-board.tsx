@@ -34,6 +34,7 @@ export interface Lead {
   assigned_to: string | null;
   pitch_script: string | null;
   column_order: number;
+  tags: string[] | null;
   created_at: string;
   updated_at: string;
   cleaned_shops: {

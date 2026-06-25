@@ -32,6 +32,11 @@ interface KanbanStore {
   activeDragId: string | null;
   setActiveDragId: (id: string | null) => void;
 
+  // Multi-select (bulk actions)
+  selectedIds: string[];
+  toggleSelect: (id: string) => void;
+  clearSelection: () => void;
+
   // Search & filters (mirrored from URL for quick access)
   searchQuery: string;
   setSearchQuery: (query: string) => void;
@@ -62,6 +67,16 @@ export const useKanbanStore = create<KanbanStore>((set) => ({
   // Drag
   activeDragId: null,
   setActiveDragId: (id) => set({ activeDragId: id }),
+
+  // Multi-select
+  selectedIds: [],
+  toggleSelect: (id) =>
+    set((s) => ({
+      selectedIds: s.selectedIds.includes(id)
+        ? s.selectedIds.filter((x) => x !== id)
+        : [...s.selectedIds, id],
+    })),
+  clearSelection: () => set({ selectedIds: [] }),
 
   // Search
   searchQuery: "",
