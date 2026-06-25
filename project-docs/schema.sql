@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS crm_leads (
     assigned_to UUID REFERENCES auth.users(id),
     pitch_script TEXT,
     column_order INTEGER DEFAULT 0,  -- Sort order within Kanban column
+    tags        TEXT[] NOT NULL DEFAULT '{}',  -- D2: free-form labels
     created_at  TIMESTAMPTZ DEFAULT NOW(),
     updated_at  TIMESTAMPTZ DEFAULT NOW()
 );
@@ -165,6 +166,7 @@ CREATE TABLE IF NOT EXISTS dlq_tasks (
 CREATE INDEX idx_crm_leads_status ON crm_leads(status);
 CREATE INDEX idx_crm_leads_assigned ON crm_leads(assigned_to);
 CREATE INDEX idx_crm_leads_heat ON crm_leads(heat_score DESC);
+CREATE INDEX idx_crm_leads_tags ON crm_leads USING GIN (tags);
 CREATE INDEX idx_cleaned_shops_city ON cleaned_shops(city);
 CREATE INDEX idx_cleaned_shops_active ON cleaned_shops(is_active);
 CREATE INDEX idx_dlq_status ON dlq_tasks(status);
