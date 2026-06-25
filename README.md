@@ -183,18 +183,28 @@ python3.11 -m venv ../.venv && source ../.venv/bin/activate
 pip install -r requirements.txt
 cp .env.example .env        # fill in values (see below)
 
-# 2. Apply DB schema (Supabase SQL Editor or psql)
-#    project-docs/schema.sql  → project-docs/rls_policies.sql  → supabase/migrations/*
+# 2. Apply DB schema:
+#    - first time, from scratch:  project-docs/schema.sql → rls_policies.sql
+#    - incremental, repeatable:   SUPABASE_DB_URL=postgresql://… \
+#                                   python scripts/run_migrations.py
+#      (--status to list, --baseline to adopt the tracker on an existing DB)
 
 # 3. Run backend (from repo root)
 uvicorn backend.main:app --reload      # http://localhost:8000/api/health
+                                       # readiness: /api/health/ready
 
 # 4. Frontend
 cd frontend
 npm install
 cp .env.local.example .env.local   # if present; else create (see below)
 npm run dev                        # http://localhost:3000
+```
 
+Or run the whole stack in one command with **`make up`** (and `make seed` for demo
+data) — see `docker-compose.yml`. Operational guidance (probes, Sentry, backups,
+key rotation) lives in [`project-docs/RUNBOOK.md`](project-docs/RUNBOOK.md).
+
+```bash
 # Tests / quality
 python -m pytest backend/tests -q
 cd frontend && npm run lint && npm run build
@@ -217,7 +227,10 @@ Log in with an admin account (admin role must be set in `app_metadata` via the s
 | `BACKEND_API_KEY` | Shared secret with the frontend proxy |
 | `APP_ENV` | `development` / `production` (prod blocks default API key) |
 | `MAX_GEMINI_CALLS_PER_DAY`, `MAX_SCRAPER_RUNS_PER_DAY` | FinOps caps |
+| `SCRAPE_RATE_LIMIT`, `SCORE_RATE_LIMIT` | Per-route burst limits (slowapi syntax) |
+| `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE`, `LOG_JSON` | Error tracking + structured logs (all opt-in) |
 | `CORS_ORIGINS`, `HOST`, `PORT` | Server |
+| `SUPABASE_DB_URL` | Postgres URL for `scripts/run_migrations.py` + backups (not used at runtime) |
 
 **`frontend/.env.local`**
 
@@ -242,11 +255,21 @@ Log in with an admin account (admin role must be set in `app_metadata` via the s
 - [x] Honest Selenium fallback + removed dead code
 - [x] Gemini → Groq free-tier fallback (scoring + pitch)
 
-### 🔧 Phase 2 — data-engineering depth (in progress)
+### 🔧 Phase 2 — data-engineering depth (done)
 - [x] **Data quality** — typed contracts + Silver/Gold gates + tests
-- [ ] **Observability + cost** — `pipeline_runs`/`pipeline_metrics` tables, per-layer rows in/out/filtered, LLM token+cost, `/api/metrics` + `/api/dlq/status`, structured logging
-- [ ] **Orchestration** — replace FastAPI BackgroundTasks with Prefect (scheduling, backfill, retries, run UI)
-- [ ] **Reproducibility + docs** — docker-compose, seed data, this README, `Makefile`, schema migrations tool (Alembic / Supabase CLI)
+- [x] **Observability + cost** — `pipeline_runs`/`pipeline_metrics` tables, per-run rows + LLM token+cost, `/api/metrics` + `/api/dlq/status`, opt-in structured logging
+- [x] **Reproducibility + docs** — docker-compose, seed data, this README, `Makefile`, `scripts/run_migrations.py` (tracked schema migrations)
+- [ ] **Orchestration** — replace FastAPI BackgroundTasks with Prefect (scheduling, backfill, retries, run UI) *(optional, not started)*
+
+### 🚀 Phase 3 — production hardening & product (done, merged)
+- [x] **Reliability** — parallel scoring, per-stage timeouts, bounded concurrency, graceful shutdown, tenacity retries
+- [x] **API hardening** — rate limiting, input/body-size limits, liveness + readiness probes
+- [x] **Error tracking & ops** — Sentry (DSN-gated), `project-docs/RUNBOOK.md`, scheduled `pg_dump` backup workflow
+- [x] **Resilience UX** — error boundaries, realtime auto-reconnect + polling fallback
+- [x] **Auth UX** — password reset, resend confirmation, account page
+- [x] **A11y & motion** — modal focus traps + Escape, `prefers-reduced-motion`
+- [x] **Onboarding** — first-run empty state + guidance
+- [x] **Product** — lead notes & activity timeline, tags + bulk actions, CSV export, saved filters
 
 ---
 
@@ -318,5 +341,5 @@ Log in with an admin account (admin role must be set in `app_metadata` via the s
 - No run-level observability / lineage yet — Phase 2.
 - Selenium fallback is best-effort and won't run on serverless hosts; SerpApi is the supported scraper.
 - No frontend tests yet; backend tests cover contracts/finops/dlq but not full pipeline integration.
-- Schema applied semi-manually (canonical SQL + migrations); a migration tool is a Phase 2 item.
+- Schema changes ship as `supabase/migrations/*` applied via `scripts/run_migrations.py` (tracked in `schema_migrations`); the canonical `project-docs/schema.sql` is the from-scratch reference.
 ```
