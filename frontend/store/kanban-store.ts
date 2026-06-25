@@ -24,6 +24,10 @@ interface KanbanStore {
   openScrapeModal: () => void;
   closeScrapeModal: () => void;
 
+  // Live progress overlay for a just-launched scrape
+  activeRunId: string | null;
+  setActiveRunId: (id: string | null) => void;
+
   leadDetailId: string | null;
   openLeadDetail: (leadId: string) => void;
   closeLeadDetail: () => void;
@@ -70,6 +74,10 @@ export const useKanbanStore = create<KanbanStore>((set) => ({
   scrapeModalOpen: false,
   openScrapeModal: () => set({ scrapeModalOpen: true }),
   closeScrapeModal: () => set({ scrapeModalOpen: false }),
+
+  // Scrape progress overlay
+  activeRunId: null,
+  setActiveRunId: (id) => set({ activeRunId: id }),
 
   // Lead Detail
   leadDetailId: null,
