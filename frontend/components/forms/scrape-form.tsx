@@ -44,7 +44,7 @@ const scrapeSchema = z.object({
 type ScrapeFormData = z.infer<typeof scrapeSchema>;
 
 export function ScrapeForm() {
-  const { scrapeModalOpen, closeScrapeModal } = useKanbanStore();
+  const { scrapeModalOpen, closeScrapeModal, setActiveRunId } = useKanbanStore();
   const queryClient = useQueryClient();
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<{ status: string; message: string } | null>(null);
@@ -82,15 +82,12 @@ export function ScrapeForm() {
       if (response.status === 429) {
         setResult({ status: "error", message: body.detail || "Quota exceeded" });
       } else if (response.ok) {
-        setResult({
-          status: "success",
-          message:
-            body.message ||
-            "Pipeline started! Track it in the Active Jobs panel; leads appear live.",
-        });
-        // Show the new job immediately; leads stream in via realtime as they're
-        // scored (no arbitrary timeout needed).
+        // Hand off to the full-screen progress overlay: track the new run and
+        // close the form (the pipeline keeps running server-side regardless).
         queryClient.invalidateQueries({ queryKey: ["pipeline_runs"] });
+        if (body.run_id) setActiveRunId(body.run_id);
+        handleClose();
+        return;
       } else {
         throw new Error(body.detail || "Failed to trigger scrape");
       }

@@ -6,6 +6,7 @@ import { KanbanBoard } from "@/components/kanban/kanban-board";
 import { PitchGenerator } from "@/components/kanban/pitch-generator";
 import { ScrapeForm } from "@/components/forms/scrape-form";
 import { ActiveJobs } from "@/components/jobs/active-jobs";
+import { ScrapeProgressOverlay } from "@/components/jobs/scrape-progress-overlay";
 import { LeadDetailsModal } from "@/components/kanban/lead-details-modal";
 import { BulkToolbar } from "@/components/kanban/bulk-toolbar";
 import { ExportButton } from "@/components/kanban/export-button";
@@ -63,6 +64,9 @@ export default function DashboardPage() {
 
       {/* Bulk-action toolbar (shows when leads are selected) */}
       <BulkToolbar />
+
+      {/* Live scrape progress overlay (shows when a scrape was just launched) */}
+      <ScrapeProgressOverlay />
     </div>
   );
 }

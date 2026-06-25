@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { formatDistanceToNow } from "date-fns";
 import { Loader2, CheckCircle2, XCircle, Activity } from "lucide-react";
+import { type PipelineRun, STAGE } from "@/lib/pipeline";
 
 /**
  * Active Jobs panel — live scrape pipeline status.
@@ -12,33 +14,11 @@ import { Loader2, CheckCircle2, XCircle, Activity } from "lucide-react";
  * Bronze → Silver → Gold job progress instead of guessing.
  */
 
-interface PipelineRun {
-  id: string;
-  city: string | null;
-  niche: string | null;
-  status: "queued" | "bronze" | "silver" | "gold" | "done" | "failed";
-  bronze_count: number;
-  silver_count: number;
-  gold_count: number;
-  error: string | null;
-  started_at: string;
-  finished_at: string | null;
-}
-
-const STAGE: Record<
-  PipelineRun["status"],
-  { label: string; cls: string; active: boolean }
-> = {
-  queued: { label: "Queued", cls: "text-text-muted", active: true },
-  bronze: { label: "Scraping…", cls: "text-info", active: true },
-  silver: { label: "Cleaning…", cls: "text-info", active: true },
-  gold: { label: "Scoring…", cls: "text-warning", active: true },
-  done: { label: "Done", cls: "text-success", active: false },
-  failed: { label: "Failed", cls: "text-danger", active: false },
-};
-
 export function ActiveJobs() {
   const queryClient = useQueryClient();
+  // Track runs we've already toasted so a completion fires exactly once.
+  const toasted = useRef<Set<string>>(new Set());
+  const seeded = useRef(false);
 
   const { data: runs = [] } = useQuery<PipelineRun[]>({
     queryKey: ["pipeline_runs"],
@@ -70,6 +50,36 @@ export function ActiveJobs() {
     };
   }, [queryClient]);
 
+  // Fire a toast when a run newly reaches done/failed. Seed the seen-set on the
+  // first load so historical runs don't toast on mount.
+  useEffect(() => {
+    if (runs.length === 0) return;
+    if (!seeded.current) {
+      runs.forEach((r) => {
+        if (r.status === "done" || r.status === "failed") toasted.current.add(r.id);
+      });
+      seeded.current = true;
+      return;
+    }
+    for (const r of runs) {
+      if (
+        (r.status === "done" || r.status === "failed") &&
+        !toasted.current.has(r.id)
+      ) {
+        toasted.current.add(r.id);
+        if (r.status === "done") {
+          toast.success(
+            `${r.gold_count} new lead${r.gold_count === 1 ? "" : "s"} — ${
+              r.niche || "—"
+            } in ${r.city || "—"}`
+          );
+        } else {
+          toast.error(`Scrape failed — ${r.niche || "—"} in ${r.city || "—"}`);
+        }
+      }
+    }
+  }, [runs]);
+
   if (runs.length === 0) return null;
 
   return (
@@ -84,8 +94,9 @@ export function ActiveJobs() {
           return (
             <div
               key={run.id}
-              className="flex items-center justify-between gap-3 text-xs rounded-lg bg-glass-bg border border-glass-border px-3 py-2"
+              className="rounded-lg bg-glass-bg border border-glass-border px-3 py-2"
             >
+            <div className="flex items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2 min-w-0">
                 {stage.active ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-accent shrink-0" />
@@ -109,6 +120,16 @@ export function ActiveJobs() {
                   })}
                 </span>
               </div>
+            </div>
+            {/* Thin stage progress bar */}
+            <div className="h-1 mt-1.5 rounded-full bg-glass-border/40 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${
+                  run.status === "failed" ? "bg-danger" : "bg-accent"
+                }`}
+                style={{ width: `${stage.pct}%` }}
+              />
+            </div>
             </div>
           );
         })}
