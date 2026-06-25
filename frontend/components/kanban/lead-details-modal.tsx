@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { useKanbanStore } from "@/store/kanban-store";
@@ -7,10 +8,12 @@ import { X, MapPin, Phone, Globe, Star, Clock, Flame, Calendar } from "lucide-re
 import { format } from "date-fns";
 import { formatPhone } from "@/lib/utils";
 import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
+import { LeadActivity } from "./lead-activity";
 
 export function LeadDetailsModal() {
   const { leadDetailId, closeLeadDetail } = useKanbanStore();
   const dialogRef = useModalA11y<HTMLDivElement>(!!leadDetailId, closeLeadDetail);
+  const [tab, setTab] = useState<"details" | "activity">("details");
 
   const { data: lead, isLoading } = useQuery({
     queryKey: ["lead-details", leadDetailId],
@@ -58,7 +61,28 @@ export function LeadDetailsModal() {
           <X className="w-5 h-5 text-text-muted hover:text-text-primary" />
         </button>
 
-        {isLoading ? (
+        {/* Tabs */}
+        <div className="flex gap-4 mb-4 mr-8 border-b border-glass-border">
+          {(["details", "activity"] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`pb-2 -mb-px text-sm font-medium capitalize border-b-2 transition-colors ${
+                tab === t
+                  ? "border-accent text-text-primary"
+                  : "border-transparent text-text-muted hover:text-text-secondary"
+              }`}
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+
+        {tab === "activity" ? (
+          <div className="flex-1 overflow-y-auto pr-2">
+            <LeadActivity leadId={leadDetailId} />
+          </div>
+        ) : isLoading ? (
           <div className="flex justify-center items-center h-48">
             <div className="spinner w-8 h-8" />
           </div>
