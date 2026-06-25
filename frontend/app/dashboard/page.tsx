@@ -10,6 +10,7 @@ import { LeadDetailsModal } from "@/components/kanban/lead-details-modal";
 import { BulkToolbar } from "@/components/kanban/bulk-toolbar";
 import { ExportButton } from "@/components/kanban/export-button";
 import { FiltersPanel } from "@/components/kanban/filters-panel";
+import { SortToggle } from "@/components/kanban/sort-toggle";
 import { useKanbanStore } from "@/store/kanban-store";
 import { Plus } from "lucide-react";
 
@@ -34,6 +35,7 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex items-center gap-2">
+          <SortToggle />
           <FiltersPanel />
           <ExportButton />
           <button
