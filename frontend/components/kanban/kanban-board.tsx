@@ -155,9 +155,24 @@ export function KanbanBoard() {
     },
   });
 
-  // Supabase Realtime subscription (spec: 05)
+  // Supabase Realtime subscription (spec: 05) with disconnect → polling fallback
+  const [realtimeDown, setRealtimeDown] = useState(false);
   useEffect(() => {
     const supabase = createClient();
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+    const startPolling = () => {
+      if (pollTimer) return;
+      pollTimer = setInterval(
+        () => queryClient.invalidateQueries({ queryKey: ["leads"] }),
+        8000
+      );
+    };
+    const stopPolling = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
 
     const channel = supabase
       .channel("crm_leads_realtime")
@@ -169,9 +184,25 @@ export function KanbanBoard() {
           queryClient.invalidateQueries({ queryKey: ["leads"] });
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          setRealtimeDown(false);
+          stopPolling();
+        } else if (
+          status === "CHANNEL_ERROR" ||
+          status === "TIMED_OUT" ||
+          status === "CLOSED"
+        ) {
+          // Lost the live connection — degrade gracefully to polling so the
+          // board still updates, and tell the user.
+          setRealtimeDown(true);
+          queryClient.invalidateQueries({ queryKey: ["leads"] });
+          startPolling();
+        }
+      });
 
     return () => {
+      stopPolling();
       supabase.removeChannel(channel);
     };
   }, [queryClient]);
@@ -234,6 +265,12 @@ export function KanbanBoard() {
 
   return (
     <div className="flex flex-col h-full">
+      {realtimeDown && (
+        <div className="mb-2 text-xs text-warning bg-warning/10 border border-warning/20 rounded-lg px-3 py-1.5 flex items-center gap-2">
+          <span className="spinner w-3 h-3 border-2" />
+          Reconnecting… live updates paused (refreshing periodically)
+        </div>
+      )}
       <DndContext
         sensors={sensors}
         collisionDetection={closestCorners}
