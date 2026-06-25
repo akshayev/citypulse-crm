@@ -1,0 +1,35 @@
+# CityPulse CRM — one-command local demo.
+#
+# Data layer is Supabase (Postgres + Auth + Realtime). Point the env files at a
+# Supabase project (a free cloud project, or `supabase start` locally), apply
+# project-docs/schema.sql + rls_policies.sql + supabase/migrations/*, then:
+#
+#   docker compose up --build        # start backend (:8000) + frontend (:3000)
+#   make seed                        # load demo leads + a demo admin user
+#
+# Requires backend/.env and frontend/.env.local (copy from the .example files).
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    env_file:
+      - backend/.env
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    env_file:
+      - frontend/.env.local
+    environment:
+      # Server-side proxy talks to the backend over the compose network.
+      - BACKEND_URL=http://backend:8000
+      - NEXT_PUBLIC_BACKEND_URL=http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
