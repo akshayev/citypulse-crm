@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { formatDistanceToNow } from "date-fns";
-import { Loader2, CheckCircle2, XCircle, Activity } from "lucide-react";
+import { Loader2, CheckCircle2, XCircle, Activity, RotateCw } from "lucide-react";
 import { type PipelineRun, STAGE } from "@/lib/pipeline";
+import { useKanbanStore } from "@/store/kanban-store";
 
 /**
  * Active Jobs panel — live scrape pipeline status.
@@ -16,9 +17,34 @@ import { type PipelineRun, STAGE } from "@/lib/pipeline";
 
 export function ActiveJobs() {
   const queryClient = useQueryClient();
+  const { setActiveRunId } = useKanbanStore();
   // Track runs we've already toasted so a completion fires exactly once.
   const toasted = useRef<Set<string>>(new Set());
   const seeded = useRef(false);
+  const [rerunning, setRerunning] = useState(false);
+
+  async function rerun(run: PipelineRun) {
+    if (!run.city || !run.niche || rerunning) return;
+    setRerunning(true);
+    try {
+      const res = await fetch("/api/scrape", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ city: run.city, niche: run.niche }),
+      });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        toast.error(body?.detail || "Could not start scrape.");
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: ["pipeline_runs"] });
+      if (body?.run_id) setActiveRunId(body.run_id);
+    } catch {
+      toast.error("Connection failed.");
+    } finally {
+      setRerunning(false);
+    }
+  }
 
   const { data: runs = [] } = useQuery<PipelineRun[]>({
     queryKey: ["pipeline_runs"],
@@ -119,6 +145,19 @@ export function ActiveJobs() {
                     addSuffix: true,
                   })}
                 </span>
+                {!stage.active && run.city && run.niche && (
+                  <button
+                    onClick={() => rerun(run)}
+                    disabled={rerunning}
+                    title="Scrape again (same city + niche)"
+                    aria-label="Scrape again"
+                    className="p-1 rounded-md text-text-muted hover:text-accent hover:bg-glass-hover transition-colors disabled:opacity-40"
+                  >
+                    <RotateCw
+                      className={`w-3.5 h-3.5 ${rerunning ? "animate-spin" : ""}`}
+                    />
+                  </button>
+                )}
               </div>
             </div>
             {/* Thin stage progress bar */}

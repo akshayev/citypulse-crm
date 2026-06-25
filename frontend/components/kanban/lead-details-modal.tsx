@@ -9,6 +9,7 @@ import { format } from "date-fns";
 import { formatPhone } from "@/lib/utils";
 import { useModalA11y } from "@/lib/hooks/use-modal-a11y";
 import { LeadActivity } from "./lead-activity";
+import { LeadTagsEditor } from "./lead-tags-editor";
 
 export function LeadDetailsModal() {
   const { leadDetailId, closeLeadDetail } = useKanbanStore();
@@ -107,6 +108,13 @@ export function LeadDetailsModal() {
                 </span>
               </div>
             </div>
+
+            {/* Tags */}
+            <LeadTagsEditor
+              leadId={lead.id}
+              tags={lead.tags ?? []}
+              assignedTo={lead.assigned_to ?? null}
+            />
 
             {/* AI Reasoning */}
             {lead.reasoning && (
