@@ -318,6 +318,11 @@ Log in with an admin account (admin role must be set in `app_metadata` via the s
 - [ ] Audit log table (who did what)
 - [ ] Webhooks / public API for integrations
 
+**Next Iteration Candidates**
+- [ ] **Job Orchestration:** Replace FastAPI BackgroundTasks with a durable orchestrator (Prefect, Celery).
+- [ ] **Data Transformations:** Migrate Bronze -> Silver -> Gold logic into dbt or DLT.
+- [ ] **Security:** Shift sensitive Supabase data fetching from frontend anon key to backend API routes.
+
 ### Ideas to consider removing / simplifying
 - [ ] Selenium fallback (rarely works headless, can't run serverless)
 - [ ] `column_order` field (drag doesn't persist intra-column order yet)
