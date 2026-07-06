@@ -121,3 +121,19 @@ flowchart LR
 Orchestrated by `_run_full_pipeline` in `backend/main.py`. Any step that fails goes to the **Dead Letter Queue** instead of crashing the pipeline.
 
 ---
+
+## 🛠 Tech Stack
+
+| Area | Technology |
+|------|-----------|
+| **Backend** | Python 3.11, FastAPI 0.115, Uvicorn, Pydantic v2, pydantic-settings |
+| **Frontend** | Next.js 16, React 19, TypeScript 5, Turbopack |
+| **UI** | Tailwind CSS 4, dnd-kit (drag/drop), TanStack Query, Zustand, react-hook-form + Zod, Sonner (toasts), Lucide icons |
+| **Database** | Supabase (Postgres + Auth + Realtime), Row-Level Security, PL/pgSQL RPCs |
+| **Scraping** | SerpApi (primary), Selenium headless (best-effort fallback) |
+| **LLM** | Google Gemini 2.5 Flash (primary) + Groq Llama-3.3-70B (free fallback) |
+| **Reliability** | Tenacity retries, SlowAPI rate limits, Sentry error tracking |
+| **CI/CD** | GitHub Actions (lint, build, Black, pytest), Vercel preview deploys |
+| **Infra** | Docker, Docker Compose, Makefile |
+
+---
