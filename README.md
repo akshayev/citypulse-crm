@@ -20,3 +20,12 @@ An event-driven, AI-enriched lead-generation CRM built around a **Bronze → Sil
 </div>
 
 ---
+
+## 📖 Overview
+
+CityPulse CRM is a **data-engineering portfolio project** that demonstrates a complete pipeline from raw data ingestion through quality gates and AI enrichment to a production-ready sales interface. The interesting part is not just the CRM UI — it's the *pipeline* architecture, its **resilience** (dead-letter queue, provider fallbacks), and its **cost controls** (FinOps quotas).
+
+### The Heat Score Thesis
+
+> A local business with **no website**, **poor SEO**, or **low ratings** is a hot lead for digital/marketing services. CityPulse scores this automatically with AI.
+
