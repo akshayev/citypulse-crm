@@ -110,3 +110,14 @@ flowchart LR
 
 **Two deployables:** the **frontend** (Next.js → Vercel) and the **backend** (FastAPI → container host). The frontend never talks to external scrapers/LLMs for pipeline work — it proxies to the backend, which holds the privileged keys.
 
+### Data Flow: Bronze → Silver → Gold
+
+| Layer | Table | Produced by | Responsibility |
+|-------|-------|-------------|----------------|
+| **Bronze** | `raw_scrapes` | `scraper/serpapi_client.py` | Capture raw scrape JSON verbatim — immutable audit record |
+| **Silver** | `cleaned_shops` | `ai_pipeline/cleaner.py` | Normalize phone/website, DNC compliance filter, data-quality gate (`CleanedShop` contract) |
+| **Gold** | `crm_leads` | `ai_pipeline/scorer.py` | LLM heat-score + reasoning, DQ gate (`ScoredLead` contract), idempotent upsert on `place_id` |
+
+Orchestrated by `_run_full_pipeline` in `backend/main.py`. Any step that fails goes to the **Dead Letter Queue** instead of crashing the pipeline.
+
+---
