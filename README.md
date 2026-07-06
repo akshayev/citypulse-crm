@@ -38,3 +38,15 @@ CityPulse CRM is a **data-engineering portfolio project** that demonstrates a co
 5. Scored leads stream into a **real-time Kanban board**; reps drag leads through `new → contacting → won / lost` and generate AI cold-outreach pitches
 
 ---
+
+## ✨ Features
+
+### Pipeline & Data Engineering
+- 🏗️ **Medallion Architecture** — Bronze → Silver → Gold with immutable audit records
+- 🧹 **Data Quality Gates** — Pydantic contracts (`CleanedShop`, `ScoredLead`) at each layer; bad rows are quarantined, never written downstream
+- 🤖 **AI Lead Scoring** — Gemini 2.5 Flash primary + Groq Llama-3.3-70B free fallback
+- 💀 **Dead Letter Queue** — Failed tasks auto-retry with exponential backoff (30s → 480s, max 5 retries)
+- 💰 **FinOps Quotas** — Atomic Postgres RPCs cap daily Gemini calls and scraper runs
+- 🔄 **Provider Fallbacks** — Gemini → Groq on LLM errors; SerpApi → Selenium on scraper failure
+- 📊 **Pipeline Observability** — Per-run metrics, LLM token/cost tracking, `/api/metrics` endpoint
+
