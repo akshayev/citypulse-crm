@@ -363,3 +363,90 @@ All endpoints (except health) require `X-API-Key` header authentication.
 | `GROQ_MODEL` | — | Groq model for pitch fallback |
 
 ---
+
+## 🧪 Testing
+
+### Backend Tests
+
+```bash
+# Run all backend tests
+python -m pytest backend/tests -q
+
+# Run a specific test file
+python -m pytest backend/tests/test_contracts.py -v
+
+# Via Docker
+make test
+```
+
+**Test coverage includes:**
+- Data quality contracts (`test_contracts.py`)
+- FinOps quota management (`test_finops.py`)
+- Dead Letter Queue operations (`test_dlq.py`)
+- API rate limiting (`test_rate_limit.py`)
+- API hardening & body limits (`test_api_hardening.py`)
+- Health & readiness probes (`test_health.py`)
+- Scraper logic (`test_scraper.py`)
+- Batch scoring (`test_score_batch.py`)
+- Auto-tagging (`test_auto_tags.py`)
+- Observability (`test_observability.py`)
+- Migrations tool (`test_migrations_tool.py`)
+
+### Frontend
+
+```bash
+cd frontend
+npm run lint        # ESLint + type checking
+npm run build       # Production build (catches type errors)
+```
+
+### CI Pipeline
+
+GitHub Actions runs on every push/PR to `master`/`main`:
+1. **Frontend job:** Node 20 → `npm ci` → lint → build
+2. **Backend job:** Python 3.11 → install deps → Black formatting check → config smoke test → pytest
+
+---
+
+## 🚢 Deployment
+
+### Backend (Container Host)
+
+The backend ships as a Docker image. Deploy to any container platform (Render, Railway, Fly.io, Cloud Run, etc.):
+
+```bash
+docker build -f backend/Dockerfile -t citypulse-backend .
+```
+
+Required env vars: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `GEMINI_API_KEY`, `BACKEND_API_KEY`, `APP_ENV=production`
+
+**Health check:** configure your platform to probe `GET /api/health/ready` with `failureThreshold ≥ 3`.
+
+### Frontend (Vercel)
+
+1. Connect the repo to Vercel
+2. Set the root directory to `frontend/`
+3. Add the env vars from the frontend section above
+4. Vercel auto-deploys on push with preview deploys for PRs
+
+### Database Migrations
+
+```bash
+# Check migration status
+SUPABASE_DB_URL=postgresql://... python scripts/run_migrations.py --status
+
+# Apply pending migrations
+SUPABASE_DB_URL=postgresql://... python scripts/run_migrations.py
+
+# Adopt tracker on existing DB (first time only)
+SUPABASE_DB_URL=postgresql://... python scripts/run_migrations.py --baseline
+```
+
+### Backups
+
+- **Primary:** Supabase PITR (enable in dashboard → Database → Backups)
+- **Secondary:** Automated daily `pg_dump` via GitHub Actions (`.github/workflows/backup.yml`), retained 14 days as build artifacts. Requires `SUPABASE_DB_URL` repo secret.
+
+For full operational guidance, see the [Ops Runbook](project-docs/RUNBOOK.md).
+
+---
