@@ -501,6 +501,11 @@ For full operational guidance, see the [Ops Runbook](project-docs/RUNBOOK.md).
 - [ ] Webhooks / public API for integrations
 - [ ] Email notifications (new hot leads, daily digest)
 
+**Next Iteration Candidates**
+- [ ] **Job Orchestration:** Replace FastAPI BackgroundTasks with a durable orchestrator (Prefect, Celery).
+- [ ] **Data Transformations:** Migrate Bronze -> Silver -> Gold logic into dbt or DLT.
+- [ ] **Security:** Shift sensitive Supabase data fetching from frontend anon key to backend API routes.
+
 ---
 
 ## 🏛️ Design Decisions & Trade-offs
