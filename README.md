@@ -70,3 +70,43 @@ CityPulse CRM is a **data-engineering portfolio project** that demonstrates a co
 - 🐳 **Docker** — One-command `docker compose up` with seed data
 
 ---
+
+## 🏗 Architecture
+
+```mermaid
+flowchart LR
+    subgraph Client["Frontend — Next.js (Vercel)"]
+        UI["Kanban / Pitch / Analytics / Settings"]
+        MW["Edge middleware (auth)"]
+        API["Route handlers /api/* (auth-gated proxy)"]
+    end
+
+    subgraph Backend["Backend — FastAPI"]
+        EP["/api/scrape, /api/score, /api/usage"]
+        PIPE["Pipeline orchestrator (BackgroundTasks)"]
+        DLQ["DLQ retry worker (60s loop)"]
+    end
+
+    subgraph Ext["External"]
+        SERP["SerpApi / Selenium"]
+        LLM["Gemini 2.5 Flash + Groq fallback"]
+    end
+
+    subgraph DB["Supabase (Postgres + Auth + Realtime)"]
+        B[("Bronze: raw_scrapes")]
+        S[("Silver: cleaned_shops")]
+        G[("Gold: crm_leads")]
+        SYS[("dnc_registry / daily_api_usage / dlq_tasks")]
+    end
+
+    UI --> MW --> API --> EP
+    UI <-. realtime .-> G
+    EP --> PIPE
+    PIPE --> SERP --> B --> S --> G
+    PIPE --> LLM
+    DLQ --> SYS
+    PIPE --> SYS
+```
+
+**Two deployables:** the **frontend** (Next.js → Vercel) and the **backend** (FastAPI → container host). The frontend never talks to external scrapers/LLMs for pipeline work — it proxies to the backend, which holds the privileged keys.
+
