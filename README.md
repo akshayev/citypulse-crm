@@ -170,3 +170,30 @@ make up                                   # Backend → :8000, Frontend → :300
 # 5. (Optional) Load demo data
 make seed
 ```
+
+### Option B: Manual Setup
+
+```bash
+# 1. Backend
+cd backend
+python3.11 -m venv ../.venv && source ../.venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env                      # Fill in values
+
+# 2. Apply DB schema (same as above)
+
+# 3. Run backend (from repo root)
+uvicorn backend.main:app --reload         # http://localhost:8000/api/health
+
+# 4. Frontend (new terminal)
+cd frontend
+npm install
+# Create .env.local (see Environment Variables below)
+npm run dev                               # http://localhost:3000
+```
+
+### First Login
+
+Log in with an admin account. The admin role must be set in `app_metadata` via the Supabase service role — new users default to `sales_rep`. See [Security Model](#-security-model) for details.
+
+---
