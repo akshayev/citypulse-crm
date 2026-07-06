@@ -137,3 +137,36 @@ Orchestrated by `_run_full_pipeline` in `backend/main.py`. Any step that fails g
 | **Infra** | Docker, Docker Compose, Makefile |
 
 ---
+
+## 🚀 Quick Start
+
+### Prerequisites
+
+| Requirement | Version |
+|---|---|
+| Python | 3.11+ |
+| Node.js | 20+ |
+| Supabase project | Free tier works |
+
+### Option A: Docker (Recommended)
+
+```bash
+# 1. Clone the repo
+git clone https://github.com/akshayev/citypulse-crm.git
+cd citypulse-crm
+
+# 2. Configure environment
+cp backend/.env.example backend/.env      # Fill in your Supabase + API keys
+# Create frontend/.env.local with Supabase anon key + backend URL (see Environment Variables below)
+
+# 3. Apply database schema to your Supabase project
+#    Run project-docs/schema.sql → rls_policies.sql in the Supabase SQL Editor
+#    Then apply migrations:
+SUPABASE_DB_URL=postgresql://... python scripts/run_migrations.py
+
+# 4. Start everything
+make up                                   # Backend → :8000, Frontend → :3000
+
+# 5. (Optional) Load demo data
+make seed
+```
