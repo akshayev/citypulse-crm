@@ -60,3 +60,13 @@ CityPulse CRM is a **data-engineering portfolio project** that demonstrates a co
 - 📈 **Analytics Dashboard** — Pipeline funnel visualization + FinOps budget meter
 - 🛡️ **DNC Registry** — Do-Not-Contact compliance management in Settings
 
+### Platform & Security
+- 🔐 **Row-Level Security** — RLS on every table; admin role via `app_metadata` (server-set only)
+- 🔑 **Auth** — Supabase email/password with password reset, email confirmation, account page
+- 🚦 **Rate Limiting** — Per-route burst caps via SlowAPI
+- 🏥 **Health Probes** — Liveness (`/api/health`) + Readiness (`/api/health/ready`) endpoints
+- 🐛 **Error Tracking** — Sentry integration (opt-in, DSN-gated)
+- ♿ **Accessibility** — Modal focus traps, Escape key support, `prefers-reduced-motion`
+- 🐳 **Docker** — One-command `docker compose up` with seed data
+
+---
