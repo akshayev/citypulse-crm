@@ -29,3 +29,12 @@ CityPulse CRM is a **data-engineering portfolio project** that demonstrates a co
 
 > A local business with **no website**, **poor SEO**, or **low ratings** is a hot lead for digital/marketing services. CityPulse scores this automatically with AI.
 
+### How it Works
+
+1. An admin triggers a **scrape** for a `city` + `niche` (e.g. "restaurants in Kochi")
+2. The backend pulls business listings via SerpApi (with a best-effort Selenium fallback) → **Bronze**
+3. Data is **cleaned**, normalized, and filtered against a Do-Not-Contact registry → **Silver**
+4. An LLM assigns each business a **Heat Score (0–100)** with reasoning → **Gold**
+5. Scored leads stream into a **real-time Kanban board**; reps drag leads through `new → contacting → won / lost` and generate AI cold-outreach pitches
+
+---
