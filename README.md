@@ -288,3 +288,16 @@ schema_migrations   Migration tracker for scripts/run_migrations.py
 Canonical DDL: [`project-docs/schema.sql`](project-docs/schema.sql) + [`project-docs/rls_policies.sql`](project-docs/rls_policies.sql). Incremental changes: [`supabase/migrations/`](supabase/migrations/).
 
 ---
+
+## 🔒 Security Model
+
+| Layer | Implementation |
+|-------|---------------|
+| **Authentication** | Supabase email/password. Edge middleware guards `/dashboard`; API route handlers require a valid session. |
+| **Authorization** | RLS on every table. Admin = `app_metadata.role == 'admin'` (server-set only — closes self-promotion). Sales reps see assigned + unassigned leads. |
+| **Secrets** | Service-role key → backend only; anon key → browser; `BACKEND_API_KEY` → server-side proxy. Prod refuses to boot with default/blank keys. |
+| **Rate Limiting** | Per-route burst caps via SlowAPI (configurable via env). Global daily FinOps quotas are the durable guard. |
+| **Compliance** | DNC registry cross-checked at Silver layer; blocked leads never advance to Gold. |
+| **Body Size** | 64 KB max request body enforced before routing (configurable). |
+
+---
