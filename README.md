@@ -256,3 +256,35 @@ citypulse-crm/
 ```
 
 ---
+
+## 💾 Data Model
+
+```
+raw_scrapes (Bronze)
+  id PK · raw_data JSONB · city · niche · source · scraped_at · created_by→auth.users
+
+cleaned_shops (Silver)
+  place_id PK · shop_name · phone · website · address · city · niche
+  · lat_lng POINT · rating(0-5) · review_count · is_active · raw_scrape_id→raw_scrapes
+
+crm_leads (Gold)
+  id PK · place_id UNIQUE →cleaned_shops · heat_score(0-100) · reasoning
+  · status(new|contacting|won|lost) · assigned_to→auth.users · pitch_script
+  · tags TEXT[] · column_order · created_at · updated_at
+
+─── Supporting Tables ───
+dnc_registry        phone UNIQUE · website_domain UNIQUE · reason         (compliance blocklist)
+daily_api_usage     date PK · gemini_calls · scraper_runs                 (FinOps counters)
+dlq_tasks           task_id PK · task_type · payload JSONB · retry_count · status · next_retry_at
+pipeline_runs       id PK · city · niche · status · bronze/silver/gold counts · LLM cost tracking
+pipeline_metrics    Aggregated pipeline performance metrics
+lead_notes          Per-lead activity timeline entries
+saved_filters       User-scoped persistent filter presets
+schema_migrations   Migration tracker for scripts/run_migrations.py
+```
+
+**Functions & Triggers:** `is_admin()`, `increment_gemini_calls()` / `increment_scraper_runs()` (atomic RPCs), `set_default_app_role()` (defaults new users to `sales_rep`), `update_updated_at_column()`.
+
+Canonical DDL: [`project-docs/schema.sql`](project-docs/schema.sql) + [`project-docs/rls_policies.sql`](project-docs/rls_policies.sql). Incremental changes: [`supabase/migrations/`](supabase/migrations/).
+
+---
