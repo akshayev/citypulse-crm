@@ -197,3 +197,62 @@ npm run dev                               # http://localhost:3000
 Log in with an admin account. The admin role must be set in `app_metadata` via the Supabase service role — new users default to `sales_rep`. See [Security Model](#-security-model) for details.
 
 ---
+
+## 📁 Project Structure
+
+```
+citypulse-crm/
+├── backend/
+│   ├── main.py                         # FastAPI app, endpoints, DLQ worker, pipeline orchestrator
+│   ├── config.py                       # pydantic-settings (env vars), prod secret guard
+│   ├── observability.py                # Sentry init + structured logging
+│   ├── retry.py                        # Tenacity retry utilities
+│   ├── scraper/
+│   │   └── serpapi_client.py           # SerpApi + Selenium fallback (Bronze)
+│   ├── ai_pipeline/
+│   │   ├── cleaner.py                  # Silver: normalize + DNC + DQ gate
+│   │   ├── scorer.py                   # Gold: Gemini/Groq scoring + DQ gate + upsert
+│   │   └── contracts.py               # Pydantic data contracts (CleanedShop, ScoredLead)
+│   ├── database/
+│   │   ├── supabase_client.py          # Supabase client singleton
+│   │   ├── finops.py                   # FinOps quota management
+│   │   ├── dlq.py                      # Dead Letter Queue operations
+│   │   ├── runs.py                     # Pipeline run tracking
+│   │   └── metrics.py                  # Pipeline metrics aggregation
+│   ├── tests/                          # pytest (12 test files)
+│   ├── Dockerfile
+│   └── requirements.txt
+├── frontend/
+│   ├── app/
+│   │   ├── (auth)/                     # login, signup, forgot-password, reset-password
+│   │   ├── dashboard/                  # Kanban board, analytics, settings, account
+│   │   ├── api/                        # Auth-gated route handlers (scrape, usage, generate-pitch, metrics, dlq)
+│   │   ├── layout.tsx                  # Root layout with providers
+│   │   ├── page.tsx                    # Landing page
+│   │   ├── error.tsx                   # Global error boundary
+│   │   └── globals.css                 # Design system tokens
+│   ├── components/
+│   │   ├── kanban/                     # Board, card, column, pitch generator, modal, bulk toolbar, filters, export
+│   │   ├── forms/                      # Reusable form components
+│   │   ├── jobs/                       # Active jobs panel
+│   │   └── providers/                  # React Query, Supabase providers
+│   ├── lib/                            # Supabase clients, auth helpers, CSV export, types, utilities
+│   ├── store/                          # Zustand state management
+│   ├── middleware.ts                   # Edge auth middleware
+│   ├── Dockerfile
+│   └── package.json
+├── project-docs/
+│   ├── schema.sql                      # Canonical database DDL (from-scratch reference)
+│   ├── rls_policies.sql                # Row-Level Security policies
+│   └── RUNBOOK.md                      # Operational runbook (probes, Sentry, backups, key rotation)
+├── supabase/migrations/                # Incremental SQL migrations (tracked by scripts/run_migrations.py)
+├── scripts/run_migrations.py           # Migration runner with --status and --baseline flags
+├── .github/workflows/
+│   ├── ci.yml                          # CI: lint, build, Black, pytest
+│   └── backup.yml                      # Daily pg_dump → artifact (02:00 UTC)
+├── docker-compose.yml                  # One-command local stack
+├── Makefile                            # build, up, down, logs, seed, test
+└── pytest.ini
+```
+
+---
