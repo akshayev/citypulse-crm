@@ -50,3 +50,13 @@ CityPulse CRM is a **data-engineering portfolio project** that demonstrates a co
 - 🔄 **Provider Fallbacks** — Gemini → Groq on LLM errors; SerpApi → Selenium on scraper failure
 - 📊 **Pipeline Observability** — Per-run metrics, LLM token/cost tracking, `/api/metrics` endpoint
 
+### CRM & Product
+- 📋 **Real-time Kanban Board** — Drag-and-drop with optimistic UI updates via Supabase Realtime
+- ✉️ **AI Pitch Generator** — Streaming cold-outreach scripts with Gemini/Groq
+- 🏷️ **Lead Tags & Bulk Actions** — Multi-select leads, bulk status changes, tag management
+- 📝 **Activity Timeline** — Per-lead notes and activity history
+- 🔍 **Saved Filters & Search** — Persistent filter presets across sessions
+- 📤 **CSV Export** — Export filtered leads with one click
+- 📈 **Analytics Dashboard** — Pipeline funnel visualization + FinOps budget meter
+- 🛡️ **DNC Registry** — Do-Not-Contact compliance management in Settings
+
