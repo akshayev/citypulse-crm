@@ -301,3 +301,21 @@ Canonical DDL: [`project-docs/schema.sql`](project-docs/schema.sql) + [`project-
 | **Body Size** | 64 KB max request body enforced before routing (configurable). |
 
 ---
+
+## 🔗 API Reference
+
+All endpoints (except health) require `X-API-Key` header authentication.
+
+| Method | Endpoint | Description | Rate Limit |
+|--------|----------|-------------|------------|
+| `GET` | `/api/health` | Liveness probe (no auth) | — |
+| `GET` | `/api/health/ready` | Readiness probe — DB + DLQ worker (no auth) | — |
+| `POST` | `/api/scrape` | Trigger full Bronze → Silver → Gold pipeline | `10/minute` |
+| `POST` | `/api/score/{place_id}` | Score a single lead manually | `20/minute` |
+| `GET` | `/api/usage` | Daily API usage stats (admin dashboard) | — |
+| `GET` | `/api/metrics?days=30` | Pipeline funnel, cost, provider split | — |
+| `GET` | `/api/dlq/status` | DLQ health: counts by status + oldest pending | — |
+
+**Frontend proxy routes** (Next.js `/api/*`): `scrape`, `usage`, `generate-pitch`, `metrics`, `dlq` — each validates the user session before forwarding to the backend.
+
+---
