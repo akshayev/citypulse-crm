@@ -319,3 +319,47 @@ All endpoints (except health) require `X-API-Key` header authentication.
 **Frontend proxy routes** (Next.js `/api/*`): `scrape`, `usage`, `generate-pitch`, `metrics`, `dlq` — each validates the user session before forwarding to the backend.
 
 ---
+
+## ⚙️ Environment Variables
+
+### `backend/.env`
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `SUPABASE_URL` | ✅ | Supabase project URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Supabase service role key (privileged, server-only) |
+| `GEMINI_API_KEY` | ✅ | Google Gemini API key |
+| `SERPAPI_KEY` | — | SerpApi key (required for scraping) |
+| `GROQ_API_KEY` | — | Groq API key (free LLM fallback) |
+| `GROQ_MODEL` | — | Groq model name (default: `llama-3.3-70b-versatile`) |
+| `BACKEND_API_KEY` | ✅ | Shared secret with frontend proxy (prod rejects defaults) |
+| `APP_ENV` | — | `development` / `production` |
+| `MAX_GEMINI_CALLS_PER_DAY` | — | FinOps cap (default: `50`) |
+| `MAX_SCRAPER_RUNS_PER_DAY` | — | FinOps cap (default: `20`) |
+| `SCRAPE_RATE_LIMIT` | — | SlowAPI syntax (default: `10/minute`) |
+| `SCORE_RATE_LIMIT` | — | SlowAPI syntax (default: `20/minute`) |
+| `SENTRY_DSN` | — | Sentry DSN (disabled if unset) |
+| `SENTRY_TRACES_SAMPLE_RATE` | — | Sentry tracing rate (default: `0.1`) |
+| `LOG_JSON` | — | Enable structured JSON logging (default: `false`) |
+| `CORS_ORIGINS` | — | Allowed origins (default: `http://localhost:3000`) |
+| `HOST` | — | Bind host (default: `0.0.0.0`) |
+| `PORT` | — | Bind port (default: `8000`) |
+| `SUPABASE_DB_URL` | — | Postgres URL for migrations + backups (not used at runtime) |
+
+### `frontend/.env.local`
+
+| Variable | Required | Description |
+|----------|----------|-------------|
+| `NEXT_PUBLIC_SUPABASE_URL` | ✅ | Supabase project URL (browser) |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | ✅ | Supabase anon key (browser, RLS-protected) |
+| `NEXT_PUBLIC_BACKEND_URL` | ✅ | Backend URL for browser requests |
+| `NEXT_PUBLIC_GEMINI_DAILY_LIMIT` | — | Daily limit display in UI |
+| `BACKEND_URL` | ✅ | Backend URL for server-side proxy |
+| `BACKEND_API_KEY` | ✅ | Shared secret with backend |
+| `GEMINI_API_KEY` | — | Gemini key for pitch generation route |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | — | Alternate Gemini key (AI SDK) |
+| `GROQ_API_KEY` | — | Groq key for pitch fallback |
+| `GEMINI_MODEL` | — | Model for pitch generation |
+| `GROQ_MODEL` | — | Groq model for pitch fallback |
+
+---
