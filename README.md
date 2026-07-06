@@ -450,3 +450,110 @@ SUPABASE_DB_URL=postgresql://... python scripts/run_migrations.py --baseline
 For full operational guidance, see the [Ops Runbook](project-docs/RUNBOOK.md).
 
 ---
+
+## 🔄 Resilience & Cost Control
+
+| Mechanism | How it Works |
+|-----------|-------------|
+| **Dead Letter Queue** | Failed scrape/clean/score tasks are enqueued in `dlq_tasks` and retried by a 60s background worker with exponential backoff (30s → 480s, max 5 retries). Retries never double-enqueue; quota exhaustion is terminal. |
+| **Provider Fallbacks** | Gemini → Groq (free) on any LLM error/quota hit; SerpApi → Selenium (best-effort) on scraper failure. |
+| **FinOps Quotas** | Atomic Postgres RPCs cap Gemini calls and scraper runs per day. The Analytics page shows a live budget meter. |
+| **Data Quality Gates** | Rows failing Silver/Gold Pydantic contracts are quarantined, never promoted downstream. |
+| **Pipeline Concurrency** | Bounded to 3 simultaneous pipelines with per-stage timeouts (scrape: 180s, clean: 180s, score: 900s). |
+| **Graceful Shutdown** | In-flight pipeline runs are marked `failed` on restart so the UI doesn't show stuck jobs. |
+| **Rate Limiting** | Per-route burst caps protect shared API budgets without a distributed store. |
+
+---
+
+## 📊 Project Status
+
+### ✅ Phase 1 — Critical Fixes
+- [x] Green CI baseline (pytest-mock, conftest, Black, pytest.ini)
+- [x] Auth-gate all `/api/*` routes + fail-closed prod secret guard + tighter CORS
+- [x] Kill admin privilege escalation (`is_admin()` → `app_metadata`, default-role trigger)
+- [x] Fix Kanban drag for sales reps (claim-on-move satisfies RLS)
+- [x] DLQ: no duplicate re-enqueue on retry + async-safe DB calls
+- [x] Prevent duplicate leads (`UNIQUE(place_id)` + idempotent upsert)
+- [x] Honest Selenium fallback + removed dead code
+- [x] Gemini → Groq free-tier fallback (scoring + pitch)
+
+### ✅ Phase 2 — Data Engineering Depth
+- [x] Data quality — typed contracts + Silver/Gold gates + tests
+- [x] Observability + cost — `pipeline_runs`/`pipeline_metrics` tables, per-run rows + LLM token/cost, `/api/metrics` + `/api/dlq/status`, opt-in structured logging
+- [x] Reproducibility + docs — Docker Compose, seed data, README, Makefile, tracked migration runner
+
+### ✅ Phase 3 — Production Hardening & Product
+- [x] Reliability — parallel scoring, per-stage timeouts, bounded concurrency, graceful shutdown, tenacity retries
+- [x] API hardening — rate limiting, input/body-size limits, liveness + readiness probes
+- [x] Error tracking & ops — Sentry (DSN-gated), ops runbook, scheduled `pg_dump` backup workflow
+- [x] Resilience UX — error boundaries, realtime auto-reconnect + polling fallback
+- [x] Auth UX — password reset, resend confirmation, account page
+- [x] A11y & motion — modal focus traps + Escape, `prefers-reduced-motion`
+- [x] Onboarding — first-run empty state + guidance
+- [x] Product — lead notes & activity timeline, tags + bulk actions, CSV export, saved filters
+
+### 🗺️ Future Roadmap
+- [ ] Orchestration — replace FastAPI BackgroundTasks with Prefect (scheduling, backfill, retries, run UI)
+- [ ] Scheduled/recurring scrapes with cron + backfill
+- [ ] SCD-style history for re-scored leads (heat-score over time)
+- [ ] Frontend tests (Vitest/RTL) + pipeline integration tests
+- [ ] Audit log table (who did what)
+- [ ] Webhooks / public API for integrations
+- [ ] Email notifications (new hot leads, daily digest)
+
+---
+
+## 🏛️ Design Decisions & Trade-offs
+
+| Decision | Rationale |
+|----------|-----------|
+| **Medallion architecture** | Keeps raw data immutable (replayable) and separates concerns (ingest vs clean vs enrich vs serve). |
+| **LLM as a transformation step** | Powerful but non-deterministic and costs money → mitigated with low temperature, JSON-mode, FinOps quotas, a free fallback, and DQ gates on output. |
+| **FastAPI BackgroundTasks** | Chosen for simplicity; they're ephemeral (lost on restart) — future work moves orchestration to Prefect for durability/scheduling. |
+| **Pydantic contracts** (not pandera/GE) | Pipeline is dict-based, not DataFrame-based; same DQ intent, lighter fit. |
+| **Supabase** | Gives Postgres + Auth + Realtime + RLS in one — the serving layer (Kanban) updates live with no custom websocket code. |
+| **In-memory rate limiting** | The backend is called server-to-server by the Next.js proxy (single upstream IP). Global burst cap is intentional for a single-tenant showcase without requiring Redis. |
+
+---
+
+## ⚠️ Known Limitations
+
+- Orchestration is in-process (no scheduler/backfill) — planned for future
+- Selenium fallback is best-effort and won't run on serverless hosts; SerpApi is the supported scraper
+- No frontend tests yet; backend has 12 test files covering contracts, finops, DLQ, rate limits, health probes, and more
+- Rate limiting is in-memory/per-process (no distributed store) — sufficient for single-tenant/showcase
+- Schema changes ship as incremental migrations applied via `scripts/run_migrations.py`; the canonical `project-docs/schema.sql` is the from-scratch reference
+
+---
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feat/amazing-feature`)
+3. Make your changes
+4. Run the test suite:
+   ```bash
+   python -m pytest backend/tests -q
+   cd frontend && npm run lint && npm run build
+   ```
+5. Commit with conventional commits (`feat:`, `fix:`, `docs:`, etc.)
+6. Push and open a Pull Request
+
+The CI pipeline will automatically run lint, type check, build, and tests on your PR.
+
+---
+
+## 📄 License
+
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+
+---
+
+<div align="center">
+
+**Built with ❤️ by [Akshay](https://github.com/akshayev)**
+
+⚡ CityPulse CRM — *Where data engineering meets AI-powered sales*
+
+</div>
+]]>
