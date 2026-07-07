@@ -17,3 +17,5 @@ seed:         ## Load demo leads + a demo admin (uses backend container env)
 
 test:         ## Run backend tests in the backend image
 	docker compose run --rm backend python -m pytest backend/tests -q
+
+# End of Makefile
