@@ -10,7 +10,7 @@ import { updateSession } from "@/lib/supabase/middleware";
  * before the server starts rendering the React tree,
  * completely eliminating UI flicker.
  */
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   return await updateSession(request);
 }
 

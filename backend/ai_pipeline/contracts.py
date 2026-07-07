@@ -13,7 +13,6 @@ Pydantic models (already a project dependency); for DataFrame-heavy pipelines
 the same idea is usually expressed with pandera/Great Expectations.
 """
 
-from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -22,16 +21,16 @@ class CleanedShop(BaseModel):
 
     place_id: str = Field(min_length=1)
     shop_name: str = Field(min_length=1)
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    address: Optional[str] = None
-    city: Optional[str] = None
-    niche: Optional[str] = None
-    rating: Optional[float] = Field(default=None, ge=0, le=5)
+    phone: str | None = None
+    website: str | None = None
+    address: str | None = None
+    city: str | None = None
+    niche: str | None = None
+    rating: float | None = Field(default=None, ge=0, le=5)
     review_count: int = Field(default=0, ge=0)
     is_active: bool = True
-    raw_scrape_id: Optional[str] = None
-    lat_lng: Optional[str] = None
+    raw_scrape_id: str | None = None
+    lat_lng: str | None = None
 
     @field_validator("shop_name")
     @classmethod

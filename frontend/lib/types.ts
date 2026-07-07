@@ -30,6 +30,7 @@ export interface CrmLead {
   created_at: string;
   updated_at: string;
   cleaned_shops: CleanedShop | null;
+  tags: string[] | null;
 }
 
 export interface DailyApiUsage {

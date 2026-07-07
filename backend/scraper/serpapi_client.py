@@ -8,11 +8,9 @@ scrape_google_maps_selenium). Results are stored as raw JSON in the Bronze
 layer (raw_scrapes table).
 """
 
-import json
 import hashlib
 import logging
 import asyncio
-from typing import List, Dict, Any
 from serpapi import GoogleSearch
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
