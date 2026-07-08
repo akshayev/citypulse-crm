@@ -38,3 +38,6 @@ npm-debug.log*
 
 # Local Claude Code session state (plans, scheduler locks) — not project code
 .claude/
+
+# Additional ignores can be added below
+venv/

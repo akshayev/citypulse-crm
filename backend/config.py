@@ -79,3 +79,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Configuration settings
