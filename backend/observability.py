@@ -68,4 +68,5 @@ def configure_logging() -> None:
         handler.setFormatter(formatter)
     logger.info("Structured JSON logging enabled")
 
+
 # Observability helpers
