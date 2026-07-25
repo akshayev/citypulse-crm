@@ -556,7 +556,7 @@ This project is licensed under the MIT License — see the [LICENSE](LICENSE) fi
 
 <div align="center">
 
-**Built with ❤️ by [Akshay EV](https://github.com/akshayev)**
+**Built by [Akshay EV](https://github.com/akshayev)**
 
 ⚡ CityPulse CRM — *Where data engineering meets AI-powered sales*
 
