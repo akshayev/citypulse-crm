@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# CityPulse CRM - Docker wrapper script
+# Usage: ./doc-crm [command]
+
+case "$1" in
+    build)
+        echo "Building backend + frontend images..."
+        docker compose build
+        ;;
+    up)
+        echo "Starting the full stack..."
+        docker compose up --build
+        ;;
+    down)
+        echo "Stopping and removing containers..."
+        docker compose down
+        ;;
+    logs)
+        echo "Tailing logs..."
+        docker compose logs -f
+        ;;
+    seed)
+        echo "Loading demo leads + a demo admin..."
+        docker compose run --rm backend python -m backend.scripts.seed
+        ;;
+    test)
+        echo "Running backend tests..."
+        docker compose run --rm backend python -m pytest backend/tests -q
+        ;;
+    *)
+        echo "Usage: $0 {build|up|down|logs|seed|test}"
+        ;;
+esac
