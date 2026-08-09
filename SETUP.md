@@ -142,4 +142,4 @@ npm run dev
 
 - **Supabase Auth/Realtime issues:** Ensure `NEXT_PUBLIC_SUPABASE_URL` and the `anon` key are correct in the frontend.
 - **Scraping fails:** If SerpApi is not configured, the app falls back to Selenium. Ensure Chrome is installed if running manually. If running in Docker, the container handles this.
-- **Backend rejects requests:** Verify that `BACKEND_API_KEY` matches exactly in both frontend and backend `.env` files.
+- **Backend rejects requests:** Verify that `BACKEND_API_KEY` matches exactly in both frontend and backend `.env` 
