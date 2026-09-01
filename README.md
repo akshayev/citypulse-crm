@@ -1,6 +1,6 @@
 <![CDATA[<div align="center">.
 
-# ⚡ CityPulse CRM
+# ⚡ CityPulse CRM.
 
 **AI-Powered Lead Generation CRM with a Medallion Data Pipeline**
 
